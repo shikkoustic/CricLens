@@ -3,7 +3,7 @@
 Kernel ids get the new owner. Dataset sources that live in the combined private dataset
 (shikkoustic/criclens-all, shared with collaborators) are switched to it, so jobs work with one share:
 criclens-clips, criclens-pilot and criclens-detection -> criclens-all. Jobs that need processed data
-(pose joints, batter finder, stumps detections) should extract processed/criclens-processed.tar.gz from it.
+(pose joints, batter finder, stumps detections) should extract criclens-processed.tgz.bin from it.
 
     python kaggle/set_owner.py <your-kaggle-username>
 Then regenerate chunk folders, e.g.  python kaggle/make_chunks.py pose-rest 10

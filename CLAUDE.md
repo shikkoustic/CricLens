@@ -36,7 +36,7 @@ Team: Shikhar Srivastava (repo owner) + teammate. Current status and next steps:
 ## Data (not in git)
 Everything lives in one private Kaggle dataset, `shikkoustic/criclens-all` (shared with collaborators):
 `clips/<source>/*.mp4` (22,420 480p clips) + `manifest.parquet`, `detection/{det,seg}` (ball/bat/stumps YOLO
-sets), `models/Player_Type_Detection_Model.pt`, and `processed/criclens-processed.tar.gz` (pose joints,
+sets), `models/Player_Type_Detection_Model.pt`, and `criclens-processed.tgz.bin (a .tar.gz renamed so Kaggle keeps it packed)` at the top level (pose joints,
 manifests, trained batter finder and detector, experiment results; extract at the repo root). Kaggle jobs
 that need processed data extract that tar at the start. The older per-part datasets (`criclens-clips`,
 `-pilot`, `-detection`, `-processed`, `-finder`, `-d2`, `-d3`) still exist on the owner's account for the

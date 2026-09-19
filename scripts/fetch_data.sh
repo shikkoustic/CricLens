@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# (the archive is named .tgz.bin because Kaggle auto-extracts .tar.gz uploads)
 # Download CricLens data from the private Kaggle dataset shikkoustic/criclens-all (must be shared with you).
 #   scripts/fetch_data.sh            processed data only (~240 MB): pose joints, manifests, models, results
 #   scripts/fetch_data.sh --all      everything (~6 GB): also the 480p clips and the detection image sets
@@ -14,10 +15,11 @@ if [ "${1:-}" = "--all" ]; then
   rm -rf data/interim/clips && mv "$TMP/clips" data/interim/clips
   rm -rf data/processed/detection && mv "$TMP/detection" data/processed/detection
   mkdir -p data/raw/cricshot10k/models && mv "$TMP/models/Player_Type_Detection_Model.pt" data/raw/cricshot10k/models/
-  TAR="$TMP/processed/criclens-processed.tar.gz"
+  TAR="$TMP/criclens-processed.tgz.bin"
 else
-  kaggle datasets download "$DS" -f processed/criclens-processed.tar.gz -p "$TMP"; unzip_all
-  TAR=$(find "$TMP" -name "criclens-processed.tar.gz" | head -1)
+  kaggle datasets download "$DS" -f criclens-processed.tgz.bin -p "$TMP"; unzip_all
+  TAR=$(find "$TMP" -name "criclens-processed.tgz.bin" | head -1)
+  [ -n "$TAR" ] || { echo "download failed: is shikkoustic/criclens-all shared with your Kaggle account?"; exit 1; }
 fi
 tar -xzf "$TAR" -C "$ROOT"
 rm -rf "$TMP"
