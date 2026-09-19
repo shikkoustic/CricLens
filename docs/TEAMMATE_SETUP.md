@@ -5,9 +5,8 @@ Everything below takes about 20 minutes, most of it the data download.
 ## 0. What Shikhar does first (once)
 1. GitHub: repo `CricLens` → **Settings → Collaborators → Add people** → your GitHub username. Accept the
    invite from your email or github.com/notifications.
-2. Kaggle: for each dataset below, open it on kaggle.com → **Settings → Sharing** → add your Kaggle username:
-   `criclens-processed`, `criclens-clips`, `criclens-detection`, `criclens-pilot`, `criclens-finder`,
-   `criclens-d2`, `criclens-d3` (all under `kaggle.com/datasets/shikkoustic/`).
+2. Kaggle: open kaggle.com/datasets/shikkoustic/criclens-all → **Settings → Sharing** → add your Kaggle
+   username. That one private dataset holds everything (clips, detection images, processed data, models).
 
 ## 1. Tools (Mac)
 ```bash
@@ -37,8 +36,8 @@ python kaggle/set_owner.py <your-kaggle-username>
 
 ## 4. Get the data
 ```bash
-scripts/fetch_data.sh            # processed data, ~240 MB: joints, manifests, models, results
-scripts/fetch_data.sh --clips    # optional: also the 480p clips, ~4 GB (only needed to re-run video steps)
+scripts/fetch_data.sh          # processed data, ~240 MB: joints, manifests, models, results
+scripts/fetch_data.sh --all    # optional: everything, ~6 GB (adds clips + detection images; only for video steps)
 ```
 Check it worked:
 ```bash

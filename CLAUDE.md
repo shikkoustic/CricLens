@@ -34,10 +34,13 @@ Team: Shikhar Srivastava (repo owner) + teammate. Current status and next steps:
 | `scripts/fetch_data.sh` | download processed data (and optionally clips) from Kaggle |
 
 ## Data (not in git)
-Private Kaggle datasets on account `shikkoustic`, shared with collaborators:
-`criclens-processed` (pose joints, manifests, trained helper models, results; ~240 MB),
-`criclens-clips` (22,420 480p clips + manifest, ~4 GB), `criclens-detection` (ball/bat/stumps images),
-`criclens-pilot`, `criclens-finder`, `criclens-d2`, `criclens-d3` (experiment inputs).
+Everything lives in one private Kaggle dataset, `shikkoustic/criclens-all` (shared with collaborators):
+`clips/<source>/*.mp4` (22,420 480p clips) + `manifest.parquet`, `detection/{det,seg}` (ball/bat/stumps YOLO
+sets), `models/Player_Type_Detection_Model.pt`, and `processed/criclens-processed.tar.gz` (pose joints,
+manifests, trained batter finder and detector, experiment results; extract at the repo root). Kaggle jobs
+that need processed data extract that tar at the start. The older per-part datasets (`criclens-clips`,
+`-pilot`, `-detection`, `-processed`, `-finder`, `-d2`, `-d3`) still exist on the owner's account for the
+finished jobs.
 
 Key files after `scripts/fetch_data.sh`:
 - `data/processed/pose_index.parquet`: one row per clip; `train_ready` marks the 16,460 clips to train on
@@ -50,5 +53,5 @@ Key files after `scripts/fetch_data.sh`:
 ## Kaggle as a collaborator
 Kernel ids in `kernel-metadata.json` name the owner's account. On another account run
 `python kaggle/set_owner.py <kaggle-username>` first, then regenerate chunks with `kaggle/make_chunks.py`.
-Dataset sources stay `shikkoustic/...` (shared). The `kaggle/run_d2.sh` and `run_batcheck_d3.sh` scripts are
+It also switches dataset sources to `shikkoustic/criclens-all`. The `kaggle/run_d2.sh` and `run_batcheck_d3.sh` scripts are
 finished one-off pipelines kept for reference.
