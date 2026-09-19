@@ -1,0 +1,15 @@
+# data never goes in git: clips are broadcast-derived (academic use only) and large.
+# Processed data lives in the private Kaggle dataset shikkoustic/criclens-processed (scripts/fetch_data.sh).
+data/
+.venv/
+.env
+*.pt
+*.joblib
+__pycache__/
+.DS_Store
+# Kaggle job outputs and generated chunk folders (regenerate with kaggle/make_chunks.py)
+kaggle/**/out/
+kaggle/chunks/
+kaggle/*-smoke*/
+kaggle/progress.json.lock
+kaggle/pose-rest-audit/*.jpg

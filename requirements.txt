@@ -1,0 +1,20 @@
+# Local (Mac/Linux) tooling for data prep, analysis and reports. GPU work runs on Kaggle and installs its own deps.
+numpy==2.3.5
+pandas==3.0.5
+pyarrow==25.0.1
+opencv-python-headless==5.0.0.93
+imagehash==4.3.2
+pillow==12.3.0
+scikit-learn==1.9.1
+matplotlib==3.11.1
+joblib==1.6.0
+kaggle==2.2.4
+huggingface-hub==1.31.0
+gdown==6.2.0
+roboflow==1.4.2
+httpx==0.28.1
+stream-unzip==0.0.101
+rarfile==4.5
+tqdm==4.70.0
+pyyaml==6.0.3
+requests==2.34.2

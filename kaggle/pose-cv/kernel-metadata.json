@@ -1,0 +1,14 @@
+{
+  "id": "shikkoustic/criclens-pose-cv",
+  "title": "criclens-pose-cv",
+  "code_file": "pose_cv.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": true,
+  "enable_internet": true,
+  "machine_shape": "NvidiaTeslaT4",
+  "dataset_sources": ["shikkoustic/criclens-clips", "shikkoustic/criclens-pilot"],
+  "competition_sources": [],
+  "kernel_sources": []
+}

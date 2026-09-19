@@ -1,0 +1,4 @@
+{"id": "shikkoustic/criclens-d3", "title": "criclens-d3", "code_file": "d3.py", "language": "python",
+ "kernel_type": "script", "is_private": true, "enable_gpu": true, "enable_internet": true, "machine_shape": "NvidiaTeslaT4",
+ "dataset_sources": ["shikkoustic/criclens-clips", "shikkoustic/criclens-d2", "shikkoustic/criclens-d3"],
+ "competition_sources": [], "kernel_sources": []}

@@ -1,0 +1,14 @@
+{
+  "id": "shikkoustic/criclens-d2",
+  "title": "criclens-d2",
+  "code_file": "d2_enhance.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": true,
+  "enable_internet": true,
+  "machine_shape": "NvidiaTeslaT4",
+  "dataset_sources": ["shikkoustic/criclens-clips", "shikkoustic/criclens-pilot", "shikkoustic/criclens-d2"],
+  "competition_sources": [],
+  "kernel_sources": []
+}

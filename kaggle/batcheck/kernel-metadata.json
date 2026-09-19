@@ -1,0 +1,4 @@
+{"id": "shikkoustic/criclens-batcheck", "title": "criclens-batcheck", "code_file": "batcheck.py", "language": "python",
+ "kernel_type": "script", "is_private": true, "enable_gpu": true, "enable_internet": true, "machine_shape": "NvidiaTeslaT4",
+ "dataset_sources": ["shikkoustic/criclens-clips", "shikkoustic/criclens-d2", "shikkoustic/criclens-d3"],
+ "competition_sources": [], "kernel_sources": []}

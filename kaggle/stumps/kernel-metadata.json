@@ -1,0 +1,14 @@
+{
+  "id": "shikkoustic/criclens-stumps",
+  "title": "criclens-stumps",
+  "code_file": "stumps.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": true,
+  "enable_internet": true,
+  "machine_shape": "NvidiaTeslaT4",
+  "dataset_sources": ["shikkoustic/criclens-clips"],
+  "competition_sources": [],
+  "kernel_sources": ["shikkoustic/criclens-train-detector"]
+}

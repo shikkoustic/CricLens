@@ -1,0 +1,20 @@
+{
+  "id": "shikkoustic/criclens-pose-rest",
+  "title": "criclens-pose-rest",
+  "code_file": "pose_rest.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": true,
+  "enable_internet": true,
+  "machine_shape": "NvidiaTeslaT4",
+  "dataset_sources": [
+    "shikkoustic/criclens-clips",
+    "shikkoustic/criclens-pilot",
+    "shikkoustic/criclens-finder"
+  ],
+  "competition_sources": [],
+  "kernel_sources": [
+    "shikkoustic/criclens-stumps-c0"
+  ]
+}

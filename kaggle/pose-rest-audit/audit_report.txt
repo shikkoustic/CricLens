@@ -1,0 +1,7 @@
+amittalmale   striker right 19/20 = 95% (95% CI 76%-99%) | pose right 19/20 = 95% | clips in run: 559
+cricshot10    striker right 40/40 = 100% (95% CI 91%-100%) | pose right 40/40 = 100% | clips in run: 1576
+cricshot10k   striker right 231/260 = 89% (95% CI 84%-92%) | pose right 223/260 = 86% | clips in run: 10061
+ipl2023       striker right 40/40 = 100% (95% CI 91%-100%) | pose right 40/40 = 100% | clips in run: 1921
+kucricshot    striker right 40/40 = 100% (95% CI 91%-100%) | pose right 40/40 = 100% | clips in run: 1216
+ALL          striker right 370/400 = 92.5% (95% CI 89%-95%) | pose right 362/400
+estimated clips with the right striker (weighted by source size): ~14,183 of 15,333

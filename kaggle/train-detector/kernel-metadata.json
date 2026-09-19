@@ -1,0 +1,14 @@
+{
+  "id": "shikkoustic/criclens-train-detector",
+  "title": "criclens-train-detector",
+  "code_file": "train_detector.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": true,
+  "enable_internet": true,
+  "machine_shape": "NvidiaTeslaT4",
+  "dataset_sources": ["shikkoustic/criclens-detection"],
+  "competition_sources": [],
+  "kernel_sources": []
+}
