@@ -3,7 +3,7 @@
 Everything below takes about 20 minutes, most of it the data download.
 
 ## 0. What Shikhar does first (once)
-1. GitHub: repo `criclens` → **Settings → Collaborators → Add people** → your GitHub username. Accept the
+1. GitHub: repo `CricLens` → **Settings → Collaborators → Add people** → your GitHub username. Accept the
    invite from your email or github.com/notifications.
 2. Kaggle: for each dataset below, open it on kaggle.com → **Settings → Sharing** → add your Kaggle username:
    `criclens-processed`, `criclens-clips`, `criclens-detection`, `criclens-pilot`, `criclens-finder`,
@@ -17,13 +17,13 @@ Windows/Linux: install Git, Python 3.12, `uv` (https://docs.astral.sh/uv/) and f
 
 ## 2. Clone and install
 ```bash
-git clone git@github.com:shikkoustic/criclens.git
-cd criclens
+git clone git@github.com:shikkoustic/CricLens.git
+cd CricLens
 uv venv --python 3.12 .venv
 source .venv/bin/activate
 uv pip install -r requirements.txt
 ```
-(If you have not set up an SSH key with GitHub, use `https://github.com/shikkoustic/criclens.git` instead.)
+(If you have not set up an SSH key with GitHub, use `https://github.com/shikkoustic/CricLens.git` instead.)
 
 ## 3. Your own Kaggle account
 - Use **your own** Kaggle account (one account per person is Kaggle's rule). Verify it with a phone number so
