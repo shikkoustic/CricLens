@@ -26,6 +26,15 @@ What this means, per that conversation:
 **Not started, and not to be started unless Shikhar asks.** This is recorded as status, not as a task.
 Project engineering work continues per the `PROGRESS.md` next-steps list.
 
+## Coursework milestones
+- **IMD Milestone 1** (done): group + topic, required to be deep-learning based.
+- **IMD Milestone 2** (drafted 2026-09-21): project design, marked 2+2 on "objectives & methodology" and
+  "relevance of algorithms/techniques". Write-up: `docs/imd/milestone2_project_design.md`; rendered to PDF
+  with headless Chromium from a styled HTML file (the PDF itself is not committed). Reference format was a
+  batchmate's submission. House style for these: crisp one-line entries, no performance figures until the
+  results milestone, and the project described as one system without naming the IMD/IVA course split.
+- Team: Shikhar Srivastava (S24CSEU0962), Vanshika Gupta (S24CSEU1135).
+
 ## Hard rule: no Claude attribution in the repo
 Everything that lands on GitHub must read as Shikhar's own work. On every commit and every push:
 - Author and committer are **Shikhar Srivastava <shiragh.4@gmail.com>**, never Claude. Git identity is not
