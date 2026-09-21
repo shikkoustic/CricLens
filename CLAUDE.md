@@ -10,6 +10,7 @@ feedback, served as a web app. It is one project submitted to two college course
   use are included; see `docs/iva/syllabus_alignment.md` and results in `docs/iva/iva_results.md`.
 
 Team: Shikhar Srivastava (repo owner) + teammate. Current status and next steps: `PROGRESS.md`.
+Working context, course setup and the research-paper direction: @docs/claude/context.md
 
 ## Hard rules
 - **Never commit data or secrets.** Clips come from TV broadcasts (academic, non-commercial use only; never

@@ -1,6 +1,6 @@
 # CricLens progress (resume point)
 
-Last updated: 2026-09-19. Preprocessing and the first IVA experiments are finished; model training has not started.
+Last updated: 2026-09-21. Preprocessing and the first IVA experiments are finished; model training has not started.
 
 ## How Kaggle work runs
 Kaggle jobs run on Kaggle's servers and keep going when the laptop sleeps. Long jobs are split into
@@ -41,6 +41,12 @@ Details: `docs/iva/iva_results.md`; syllabus mapping: `docs/iva/syllabus_alignme
    crease lines) for stride in cm and swing speed in m/s.
 5. Later: bat U-Net + bat angle from shape moments, TrackNet ball tracking, 3D pose lifting for camera angles,
    coaching LLM, web app.
+
+## Research paper (new, 2026-09-21)
+The IVA instructor approved the project and asked for a **research paper** on it. The project direction is
+unchanged; what is added is a literature survey of existing approaches to the same problem, followed by a
+novelty contribution that makes the work publishable. Not started. Engineering next-steps above continue
+meanwhile. Context: `docs/claude/context.md`.
 
 ## Open decisions
 - Practice/nets/shadow-batting videos (no bowler or ball) are parked; focus is match clips for now.
