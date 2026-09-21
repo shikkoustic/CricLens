@@ -1,10 +1,11 @@
 # CricLens: literature survey for the journal paper
 
 Purpose: the reading list and gap analysis behind the CricLens journal submission (IVA / CSET344 + IMD).
-Compiled 2026-09-21. **Verification status:** entries were gathered through search and abstract-level
-sources; arXiv and CVF Open Access were unreachable from the build environment, so every citation must be
-checked against the publisher PDF (authors, page numbers, exact metric values) before submission. Numbers
-quoted below are as reported by the authors, not reproduced by us.
+Compiled 2026-09-21. **Verification status:** Sections A-H were compiled from search and abstract-level
+sources. **Part II (at the end of this file) holds verified full-text notes** for the three papers that
+matter most; where Part II and Sections A-H disagree, Part II wins. Everything still only abstract-level
+must be checked against the publisher PDF before submission. Numbers quoted are as reported by the
+authors, not reproduced by us.
 
 ---
 
@@ -406,3 +407,160 @@ performance gap and test whether canonicalising all strokes to one handedness cl
 **Suggested paper shape:** N3 as the benchmark, N1 + N2 as the twin methodological contributions
 (one IVA-flavoured, one IMD-flavoured), N4 as the model that consumes both, N5 as an audit section.
 That is a coherent journal-length contribution rather than four thin ones.
+
+---
+
+# Part II — verified full-text notes
+
+Read in full from the publisher PDFs on 2026-09-21. These supersede the abstract-level entries above.
+
+## II.1 Moodley & van der Haar, "I3D-AE-LSTM", WACV 2025, pp. 5470–5478
+
+Tevin Moodley and Dustin van der Haar, University of Johannesburg. Dataset and scoring guideline at
+`github.com/dvanderhaar/uj-aqa-cricketvision`.
+
+**Data.** 8,540 samples after sanity checks; 5,571 right-handed, 2,969 left-handed. Footage is open-source
+YouTube video of First-Class International Test matches. Annotated with the VIA tool by two annotators
+against a scoring guideline built with two cricket experts. Body parts scored: head and shoulders by angle
+(0–15°), hands and hips on a 0–4 number line, feet by angle (0–15°) — all relative to horizontal/vertical
+lines drawn through the head. Strokes categorised by competency from the execution phase: poor 1,478,
+average 2,415, good 2,689, excellent 1,958.
+
+**Scope.** 28 frames per sample, of which only the middle 12 are used (4 per phase). **The model is trained
+on the execution phase only — 4 frames per sample.** The execution phase is defined as ball pitch to
+bat–ball contact. Buildup and follow-through are explicitly deferred to future work.
+
+**Pipeline.** Crop to the annotated bounding box → ViTPose-large (stated as "COCO, 25 keypoints"; note COCO
+is a 17-keypoint format, so this is internally inconsistent) with YOLO person detection at confidence 0.5
+→ cubic spline interpolation to fill short frames/keypoints → normalise to [0,1] → two autoencoder streams
+(I3D over frames; LSTM 256→128 over pose) → weighted fusion `F = αFv + βFp` → LSTM aggregation → MLP with
+5 linear outputs.
+
+**Four findings that matter to us:**
+
+1. **Batter selection is a one-line heuristic.** Verbatim: *"we found the person with the largest
+   y-coordinate in the frames and used those keypoints as the batter for every sample."* It works only for
+   the behind-the-bowler broadcast angle and only against the wicketkeeper; it has no defence against the
+   non-striker, umpire, or close-in fielders, and no confidence measure. **This is our Gap 1, confirmed in
+   their own words** — and it is essentially the hand-written rule CricLens measured at 57% top-1, against
+   91.2% for the learned finder.
+2. **Splits are random and ungrouped.** Verbatim: *"Through trial and error, the train, validation, and
+   test splits were 75, 15, 10."* No grouping by match, batter or source video. Combined with our own
+   datasheet finding that CricketVision ships **1,156 strokes duplicated across annotator folders**
+   (`P3_V6` = `P4_V9`, `P5_V35` = `P6_V31` — identical frames, same stroke index), a random split can place
+   the *same stroke* in train and test. **The 0.84 is therefore an optimistic estimate of unseen-match
+   performance, and we can demonstrate by how much.**
+3. **The RGB stream buys very little.** Their own ablation: ViTPose keypoints alone = **0.79**; adding the
+   I3D frame stream = **0.84**. C3D+ViTPose 0.83, SlowFast+ViTPose 0.80. Pose-only is within 0.05 of the
+   headline at a fraction of the compute — strong support for a pose-only CricLens pipeline.
+4. **The five body-part scores are almost certainly not independently discriminative.** Reported per-part
+   SRC: head 0.84146, shoulder 0.84040, hands 0.83865, hips 0.84027, feet 0.83844 — a total spread of
+   **0.003 across five anatomically distinct assessments**. That pattern is what you get when the five
+   labels are highly inter-correlated and the model is effectively predicting one number five times. A
+   paper that measured and reported *discriminative* per-part assessment (partial correlations, or SRC
+   after regressing out the overall score) would be making a genuinely new claim. **We can test this
+   cheaply — the per-part scores are already in `manifest.parquet`.**
+
+**Two protocol details to scrutinise.** They report that replicating scores across frames before taking a
+windowed average *"improved SRC performance by up to 20%"* — a post-processing step that needs
+justification before it is inherited. And Table 2 claims I3D-AE-LSTM reaches **0.9767 on MTL-AQA**, above
+the 0.9589 they cite as prior SOTA, on sequences truncated to 65 frames; an extraordinary claim made in
+passing inside a dataset paper.
+
+**Stated weaknesses.** Error distribution is left-skewed — the model systematically overestimates — and it
+fails on strokes scoring 0–2, which they attribute to data scarcity in that range.
+
+**Baselines on their own data:** I3D-DAE (Zhang et al. 2024) = 0.60; C3D-LSTM (Parmar & Morris) = 0.68.
+These are the numbers to reproduce first.
+
+## II.2 Moodley & van der Haar, "CricTAL", ICCV 2025 Workshops (SAUAFG), pp. 2738–2745
+
+Pose-only temporal activity localisation of the three stroke phases, on the same uj-aqa-cricketvision data.
+
+**Pipeline.** **OpenPose** keypoints reshaped to (25, 3) as (x, y, confidence), L2 or min-max normalised
+per frame, linear interpolation for missing keypoints and frames. Two framings: a non-overlapping
+*classification window* of **35 frames** (chosen as the mean frames per stroke) and an overlapping
+*sliding window* centred on each frame (sizes 7/11/14/21/31/41 tried; 7 was best). Models: LSTM, RNN, TCN,
+Transformer.
+
+**Results.**
+
+| Model | Approach | Accuracy | mAP@0.5 | avg mAP@[0.3:0.7] |
+|---|---|---|---|---|
+| LSTM | classification window | 94.5% | 63.83% | — |
+| RNN | classification window | 76.7% | 63.87%* | 66.10% |
+| Transformer | classification window | 80.1% | 63.87% | 63.81% |
+| LSTM | sliding window | 93.3% | 62.45% | 63.28% |
+| **TCN** | **sliding window** | **90.4%** | **64.45%** | **65.72%** |
+| Transformer | sliding window | 89.3% | 60.88% | 62.23% |
+
+**What this tells us.** Frame-level accuracy is high (90–94%) but **localisation is mediocre — every model
+sits in a narrow 60–66% mAP@0.5 band regardless of architecture.** Their §4.1 concedes the consequence:
+*"misclassifying phase boundaries directly undermines scoring accuracy"* in phase-wise AQA. So the phase
+boundaries feeding their own downstream AQA are only moderately reliable, and the choice of temporal
+architecture barely moves them — which suggests the bottleneck is the input representation or the label
+definition, not the model. That is an opening.
+
+**Note the inconsistency across their own two papers:** ViTPose in the WACV paper, OpenPose here, on the
+same dataset. No cross-pose-model comparison is reported anywhere.
+
+**Also useful:** their Table 2 is a ready-made comparison of prior cricket video understanding work
+(Gupta & Balan 2020 C3D+GRU stroke localisation, mTIoU 0.71; Abbas et al. 2022 YOLO+RetinaNet delivery
+segmentation 90.0%; Raval et al. 2023 K-means + scoreboard heuristic replay detection 94–96%;
+Shingrakhia et al. 2021 SGRNN-AM + HRF-DBN highlight summarisation 96.3%).
+
+## II.3 Kang, "Modern Deep Learning Approaches for Cricket Shot Classification", arXiv:2510.09187
+
+Sungwoo Kang, Korea University, submitted 10 Oct 2025. Code at `github.com/hpicsk/CricShot10_Baselines`.
+
+**Setup.** CricShot10, 1,888 samples across 10 classes (~180–200 per class), **stratified random split with
+fixed seed 27**, 70/15/15 → 1,320 / 284 / 284. Single A100. Seven models re-implemented "strictly following
+the details described in the respective papers".
+
+**The reproduction gap.**
+
+| Original claim | Re-implemented |
+|---|---|
+| Kumar/Balaji et al., modified LRCN — 96% | **46.0%** |
+| Bhat et al. — 99.2% | **55.6%** |
+| Sen et al. (Sensors 2021), VGG16-GRU — 93% | **57.7%** |
+| ViT + RNN — 98.9% | **10.6%** |
+| Attention network — 99.19% | **40.5%** |
+| Kang's own EfficientNet-B0 + GRU | **92.25%** |
+
+Note the 96% claim was on a *reduced 5-class* subset, not the full 10 classes.
+
+**The opening this leaves us.** Kang attributes the gap to *"differences in dataset splits, evaluation
+code, or minor implementation details not specified in the papers"* — he identifies the symptom but
+**never diagnoses near-duplicate leakage as the cause, and never audits the data.** And his own headline
+92.25% is measured on a **stratified random, ungrouped split of CricShot10** — the very dataset where the
+CricLens manifest build found **157 verified duplicate clusters, 75 of them spanning the dataset's own
+train/val/test folders**. So the paper that exposes the field's reproducibility crisis reports its own new
+benchmark on a contaminated split.
+
+That is a clean, defensible contribution for us: **diagnose the cause Kang left open, and re-measure on a
+leakage-controlled, match-grouped split.** We already have the dedupe machinery and the evidence.
+
+---
+
+# Part III — revised gap analysis after full-text reading
+
+| # | Gap | Status after reading | What CricLens can show |
+|---|---|---|---|
+| 1 | Subject selection unsolved | **Confirmed, stronger than assumed.** I3D-AE-LSTM selects the batter by "largest y-coordinate"; CricTAL inherits the same data. No confidence, no failure analysis, no ablation. | Learned finder 91.2% vs 57% rules on unseen matches; propagate both into shot accuracy and part-wise SRC |
+| 2 | Preprocessing not task-conditioned | **Confirmed, wide open.** Neither paper runs any enhancement or degradation study; preprocessing is crop + interpolate + normalise. | D1–D3 evidence: CLAHE helps bat detection / hurts pose; zero padding cuts edge error 20–60%; best-SSIM is worst-for-pose |
+| 3 | Leakage | **Confirmed, and worse than assumed.** I3D-AE-LSTM: random 75/15/10, no grouping, on a dataset carrying 1,156 duplicated strokes. Kang: stratified random seed 27 on a dataset with 75 cross-split duplicate clusters. | Two-stage pHash dedupe + match-grouped splits; quantify the inflation directly |
+| 4 | No cross-source testing | **Confirmed.** Single source: YouTube Test-match footage, one annotation team. | Train on CricketVision scores, evaluate on five other broadcast sources |
+| 5 | Handedness bias unexamined | **Confirmed.** They report 5,571 right / 2,969 left and do nothing with it. | Left/right audit + mirror canonicalisation |
+| 6 | **NEW — per-part scores may not be discriminative** | Per-part SRC spread is 0.003 across five body parts. Strong sign the five labels are near-collinear and one number is being predicted five times. | Report the inter-part correlation matrix and partial correlations; define a discriminative part-wise metric |
+| 7 | **NEW — RGB stream earns little** | Their own ablation: pose-only 0.79 → +I3D 0.84. | Justifies a pose-only pipeline on compute, privacy and robustness grounds |
+
+**Revised recommendation.** Gaps 1, 2, 3 and 6 are all defensible and all supported by work already done or
+cheaply doable. Gap 6 is the surprise and may be the sharpest single result in the paper: if the published
+0.84 per-part correlation is really one number repeated five times, then *nobody has yet demonstrated
+working per-body-part cricket technique assessment* — and that reframes CricLens from "incremental
+improvement" to "first to do the thing the field claims to do".
+
+**Cheapest next experiment, before any training:** load `manifest.parquet`, compute the correlation matrix
+between the five CricketVision part scores, and check the variance of the per-part labels. If they are
+highly collinear, Gap 6 is real and the paper has its headline.
