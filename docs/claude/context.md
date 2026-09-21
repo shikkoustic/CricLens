@@ -35,6 +35,15 @@ Project engineering work continues per the `PROGRESS.md` next-steps list.
   results milestone, and the project described as one system without naming the IMD/IVA course split.
 - Team: Shikhar Srivastava (S24CSEU0962), Vanshika Gupta (S24CSEU1135).
 
+## Branch policy
+Project work stays on the working branch `claude/beautiful-pasteur-gkt16e` rather than going into `main`.
+Shikhar's decision (2026-09-21): keep the branch for as long as the project is active, and delete it once
+the project is finished. Do not merge into `main` or delete the branch without asking him first.
+
+Note: each new cloud session is assigned its own randomly named `claude/...` branch. To avoid collecting
+several of them, push to the branch above instead of the session's default, confirming with Shikhar first
+since it differs from the session instruction.
+
 ## Hard rule: no Claude attribution in the repo
 Everything that lands on GitHub must read as Shikhar's own work. On every commit and every push:
 - Author and committer are **Shikhar Srivastava <shiragh.4@gmail.com>**, never Claude. Git identity is not
