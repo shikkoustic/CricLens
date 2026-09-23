@@ -85,18 +85,52 @@ def evaluate_classification(df: pd.DataFrame, y_true: str, y_pred: str, by: str 
     return out
 
 
+def partial_spearman_vs_overall(df: pd.DataFrame, true_col: str, pred_col: str,
+                                 true_overall_col: str, pred_overall_col: str) -> float:
+    """Whether a part prediction carries anything beyond the shared overall-quality factor
+    (docs/paper/finding_label_collinearity.md: the 5 label scores correlate at 0.95-0.99, so raw
+    per-part Spearman cannot show independent per-part discrimination on its own).
+
+    Residualise the true part score against the true overall score, and the predicted part score
+    against the predicted overall score (same construction as check 4 in
+    models/label_correlation_analysis.py, applied across model predictions instead of within labels),
+    then correlate the two residuals. Nonzero means the model captures part-specific signal that
+    isn't explained by "how good was the shot overall"; near-zero means it's just fitting that
+    shared factor, however good the raw per-part Spearman looks."""
+    d = df[[true_col, pred_col, true_overall_col, pred_overall_col]].dropna()
+    if len(d) < 3:
+        return float("nan")
+
+    def resid(y, x):
+        b = np.polyfit(x, y, 1)
+        return y - np.polyval(b, x)
+
+    rt = resid(d[true_col].to_numpy(float), d[true_overall_col].to_numpy(float))
+    rp = resid(d[pred_col].to_numpy(float), d[pred_overall_col].to_numpy(float))
+    return spearman(rt, rp)
+
+
 def evaluate_rating(df: pd.DataFrame, true_cols: dict[str, str], pred_cols: dict[str, str],
-                     by: str | None = None) -> dict:
+                     by: str | None = None, overall_cols: tuple[str, str] | None = None) -> dict:
     """true_cols/pred_cols: {part_name: column_name}, e.g. {"head": "score_head", ...}. Returns per-part
     Spearman + R-l2, the Fisher-z mean across parts, and (if `by`) the same breakdown per group -- this
     is the table that checks whether per-part scores are actually discriminative (docs/paper/dossier.md,
-    Part IV, Gap 6): if every part's Spearman and R-l2 are near-identical, the parts likely aren't."""
+    Part IV, Gap 6): if every part's Spearman and R-l2 are near-identical, the parts likely aren't.
+
+    overall_cols: (true_overall_col, pred_overall_col), if given, adds partial_spearman_vs_overall per
+    part -- required reading alongside raw Spearman, per finding_label_collinearity.md."""
     parts = list(true_cols)
     per_part = {p: {"n": int(df[[true_cols[p], pred_cols[p]]].dropna().shape[0]),
                      "spearman": spearman(df[true_cols[p]], df[pred_cols[p]]),
                      "r_l2": relative_l2(df[true_cols[p]], df[pred_cols[p]])} for p in parts}
+    if overall_cols:
+        to, po = overall_cols
+        for p in parts:
+            per_part[p]["partial_spearman_vs_overall"] = partial_spearman_vs_overall(df, true_cols[p], pred_cols[p], to, po)
     out = {"per_part": per_part, "mean_spearman": fisher_mean([per_part[p]["spearman"] for p in parts]),
            "mean_r_l2": float(np.mean([per_part[p]["r_l2"] for p in parts if np.isfinite(per_part[p]["r_l2"])]))}
+    if overall_cols:
+        out["mean_partial_spearman_vs_overall"] = fisher_mean([per_part[p]["partial_spearman_vs_overall"] for p in parts])
     if by:
         rows = []
         for g, gd in df.groupby(by):
@@ -120,9 +154,11 @@ def format_report(d: dict, title: str = "") -> str:
     if "accuracy" in d:
         lines.append(f"n={d['n']}  accuracy={d['accuracy']:.3f}  macro-F1={d['macro_f1']:.3f}  weighted-F1={d['weighted_f1']:.3f}")
     if "mean_spearman" in d:
-        lines.append(f"mean Spearman={d['mean_spearman']:.3f}  mean R-l2={d['mean_r_l2']:.2f}")
+        extra = f"  mean partial-rho(vs overall)={d['mean_partial_spearman_vs_overall']:.3f}" if "mean_partial_spearman_vs_overall" in d else ""
+        lines.append(f"mean Spearman={d['mean_spearman']:.3f}  mean R-l2={d['mean_r_l2']:.2f}{extra}")
         for p, m in d["per_part"].items():
-            lines.append(f"  {p:10s} n={m['n']:5d}  rho={m['spearman']:.3f}  R-l2={m['r_l2']:.2f}")
+            pv = f"  partial={m['partial_spearman_vs_overall']:.3f}" if "partial_spearman_vs_overall" in m else ""
+            lines.append(f"  {p:10s} n={m['n']:5d}  rho={m['spearman']:.3f}  R-l2={m['r_l2']:.2f}{pv}")
     for k, v in d.items():
         if k.startswith("by_") and isinstance(v, pd.DataFrame):
             lines.append(f"-- {k} --\n{v.to_string(index=False)}")
