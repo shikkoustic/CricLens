@@ -5,7 +5,7 @@ datasets, not the repo). Validated locally first (docs/iva/iva_results.md D4) on
 before this full run, per CLAUDE.md's rule to check outputs before trusting a run at scale.
 Output: pitch_calib_<chunk>.csv (one row per clip with kps_exists) and overlay frames for a QA sample.
 """
-import glob, json, os, time
+import glob, json, os, subprocess, time
 from concurrent.futures import ProcessPoolExecutor
 
 import cv2
@@ -17,9 +17,19 @@ NCHUNKS = int(os.environ.get("CRICLENS_NCHUNKS", "1"))
 LIMIT = int(os.environ.get("CRICLENS_LIMIT", "0"))
 OUT = "/kaggle/working"
 os.makedirs(f"{OUT}/overlays", exist_ok=True)
-POSE_IDX = glob.glob("/kaggle/input/**/pose_index.parquet", recursive=True)[0]
-STUMPS_DETS = glob.glob("/kaggle/input/**/stumps_dets.csv", recursive=True)[0]
-INPUT_ROOT = POSE_IDX.rsplit("/data/processed/", 1)[0]
+
+# criclens-processed.tgz.bin holds data/processed/ (pose_index.parquet) and the per-chunk kps/ + stumps
+# detections; the dataset only carries it packed (CLAUDE.md), so every job that needs processed data
+# extracts it first (same convention as kaggle/pose-pad/pose_pad.py)
+PROC = "/tmp/proc"
+_tgz = glob.glob("/kaggle/input/**/criclens-processed.tgz.bin", recursive=True)[0]
+os.makedirs(PROC, exist_ok=True)
+subprocess.run(["tar", "-xzf", _tgz, "-C", PROC, "--wildcards",
+                 "data/processed/*", "kaggle/chunks/pose-*/out/kps/*", "kaggle/chunks/stumps-c0/out/*"],
+                check=True)
+POSE_IDX = f"{PROC}/data/processed/pose_index.parquet"
+STUMPS_DETS = f"{PROC}/kaggle/chunks/stumps-c0/out/stumps_dets.csv"
+INPUT_ROOT = PROC
 CLIPS = [c for c in glob.glob("/kaggle/input/**/clips", recursive=True) if os.path.isdir(f"{c}/cricketvision")][0]
 
 STUMPS_HEIGHT_CM = 71.1
