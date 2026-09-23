@@ -19,15 +19,15 @@ Rule: a syllabus technique is listed only if CricLens genuinely needs it. Done =
 | Adaptive median filter | Repair for salt-and-pepper noise | Joint error 0.029 -> 0.005, clearly better than plain median | Done |
 | Convolution & padding (zero / replicate) | Padding the batter crop when it runs off the frame | Zero padding cut pose error 20-60% on edge cases; affects 4,461 clips -> adopted | Done (re-run pending) |
 | Laplacian / Sobel | Sharpness measures (Laplacian variance, Tenengrad) in the quality profile | How blur was detected across the dataset | Done |
-| Canny edge detection | Crease and pitch lines | Needed for calibration | Planned |
+| Canny edge detection | Crease and pitch lines | Needed for calibration | Done (D4) |
 
 ## Module 2: Edges, colour, morphology
 | Syllabus topic | How CricLens uses it | Why it's genuine | Status |
 |---|---|---|---|
-| Colour models (CIELAB / HSV) | Enhancement on the luminance channel only (done); HSV pitch-strip segmentation (planned) | Keeps colours intact; pitch segmentation is step 1 of calibration | Done / Planned |
-| Hough line transform | Detect crease lines | Creases give known real distances for pixels -> cm | Planned |
-| Morphological operations (opening, closing, hole filling) | Clean the pitch mask | Raw colour thresholds are noisy | Planned |
-| Connected components | Keep the pitch region, drop logos and crowd blobs | Picks the one real pitch area | Planned |
+| Colour models (CIELAB / HSV) | Enhancement on the luminance channel only; HSV pitch-strip segmentation (tan pitch vs green outfield) | Keeps colours intact; pitch segmentation is step 1 of calibration | Done |
+| Hough line transform | Detect crease lines | Creases give known real distances for pixels -> cm | Done (D4, 20.0% of clips calibrated) |
+| Morphological operations (opening, closing, hole filling) | Clean the pitch mask | Raw colour thresholds are noisy | Done (D4) |
+| Connected components | Keep the pitch region, drop logos and crowd blobs | Picks the one real pitch area | Done (D4, bottom-centre blob, not just largest) |
 | Shape moments | Bat angle from the bat mask | Bat angle is a coaching output | Planned (with bat model) |
 
 ## Module 3: Motion & frequency domain

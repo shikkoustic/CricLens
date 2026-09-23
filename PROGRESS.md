@@ -33,6 +33,7 @@ account; runners retry every 5 min when both are busy. Resume = re-run the runne
 | 17 | **Finding**: CricketVision's five body-part scores are ~one signal, not five (`docs/paper/finding_label_collinearity.md`) | raw corr 0.95-0.99, PC1 = 97.5% of variance, `score_overall` alone explains 97-99% of each part; changes how the scorer must be evaluated |
 | 18 | Seed-controlled variance sweep (3 seeds x 2 models, `models/seed_sweep_driver.sh`) | full mean+/-std results in `docs/paper/results_phase3.md`; label-collinearity finding now confirmed across labels + 3 independently seeded trained models |
 | 19 | Technique scorer loss-weight tuning (3x3 grid, `models/tune_technique_scorer_driver.sh`) | untuned defaults were the worst combo in the grid; new default kl_weight=0.001/reg_weight=10.0 gives mean Spearman 0.603+/-0.010 (up from 0.592+/-0.023) -- modest gain, ~half the run-to-run variance |
+| 20 | IVA D4: pitch calibration (HSV + morphology + connected components + Hough crease lines, stumps fallback), full 22,420 clips (Kaggle CPU) | **20.0% of clips calibrated** (3,028 crease, 1,450 stumps-fallback); median stride 174.7cm, median swing 14.5 m/s; yield ranges 3.5% (ipl2023, tiny crease at 480p) to 38.2% (cricketvision); `data/processed/iva/pitch_calibration.parquet` |
 
 Details: `docs/iva/iva_results.md`; syllabus mapping: `docs/iva/syllabus_alignment.md`.
 
@@ -57,10 +58,14 @@ Details: `docs/iva/iva_results.md`; syllabus mapping: `docs/iva/syllabus_alignme
    reg_weight=10.0) give a modest, seed-confirmed gain and much tighter variance. Model training for phase 3
    is now considered final: shot classifier (LSTM or Transformer) and technique scorer (tuned weights) both
    have variance-characterised numbers ready to quote in the paper.
-3. IVA module next: pitch calibration (HSV pitch segmentation, morphology, connected components, Canny + Hough
-   crease lines) for stride in cm and swing speed in m/s.
-4. Later: bat U-Net + bat angle from shape moments, TrackNet ball tracking, 3D pose lifting for camera angles
-   (PoseC3D found this hurts on FineGym -- verify before investing here), coaching LLM, web app.
+3. **Pitch calibration done** (2026-09-23, #20 above) -- HSV/morphology/CC/Hough crease detection with a
+   stumps-detection fallback, run on all 22,420 clips on Kaggle CPU. 20.0% of clips get a real stride/swing
+   measurement in cm/m/s; ship as a per-clip coaching-report add-on, not a pipeline-wide dependency, given
+   the yield. `data/processed/iva/pitch_calibration.parquet`.
+4. Later: bat U-Net + bat angle from shape moments (Hough/HSV for pitch calibration's morphology and
+   connected-components code in `models/pitch_calibration.py` is directly reusable for bat mask cleanup),
+   TrackNet ball tracking, 3D pose lifting for camera angles (PoseC3D found this hurts on FineGym -- verify
+   before investing here), coaching LLM, web app.
 
 ## Open decisions
 - Practice/nets/shadow-batting videos (no bowler or ball) are parked; focus is match clips for now.
