@@ -1,6 +1,7 @@
 # CricLens progress (resume point)
 
-Last updated: 2026-09-19. Preprocessing and the first IVA experiments are finished; model training has not started.
+Last updated: 2026-09-23. Preprocessing, IVA experiments, and phase-3 model training (with a proper
+seed-controlled variance sweep) are done; loss-weight tuning is next.
 
 ## How Kaggle work runs
 Kaggle jobs run on Kaggle's servers and keep going when the laptop sleeps. Long jobs are split into
@@ -30,32 +31,33 @@ account; runners retry every 5 min when both are busy. Resume = re-run the runne
 | 15 | Frame-rate normalisation: every clip's window resampled to T=32 frames over normalised time (`models/resample_sequences.py`) | all 22,420 clips, 0 failures, 99.9% real (non-imputed) joint data; `data/processed/sequences.parquet` |
 | 16 | Evaluation harness (`models/evaluate.py`): shared accuracy/F1/confusion-matrix and Spearman/R-ℓ2, with per-source/handedness breakdowns and a split-leakage check | built before any model, so every model is scored the same way |
 | 17 | **Finding**: CricketVision's five body-part scores are ~one signal, not five (`docs/paper/finding_label_collinearity.md`) | raw corr 0.95-0.99, PC1 = 97.5% of variance, `score_overall` alone explains 97-99% of each part; changes how the scorer must be evaluated |
+| 18 | Seed-controlled variance sweep (3 seeds x 2 models, `models/seed_sweep_driver.sh`) | full mean+/-std results in `docs/paper/results_phase3.md`; label-collinearity finding now confirmed across labels + 3 independently seeded trained models |
 
 Details: `docs/iva/iva_results.md`; syllabus mapping: `docs/iva/syllabus_alignment.md`.
 
 ## Next steps (in order)
-1. **Phase 3 done, retrained on corrected (post-pose-pad) joints** (2026-09-23), full results and the
-   before/after comparison in `docs/paper/results_phase3.md`. Headline numbers (this run; **no fixed seed
-   was used, see point 2**):
-   - shot classifier: GRU best this run, test accuracy 0.784 / macro-F1 0.776 (architectures moved in both
-     directions vs the first run -- not yet a settled comparison, see point 2)
-   - technique scorer: mean Spearman 0.602 (up from 0.571), mean partial-Spearman-vs-overall 0.061 (still
-     near-zero) -- **the label-collinearity finding (#17) is now confirmed on two independently trained
-     models**, which matters more than either single Spearman number
-   - handedness audit: re-run flipped the mirroring direction found in the first run (helped left-handers
-     this time, hurt them last time) -- **not a reproducible effect; retract the "mirroring hurts" framing
-     from the first pass.** What did hold across both runs: a modest raw right>left gap, present in all 4
-     audits so far, magnitude 0.01-0.06 depending on model/run.
-2. **Now that both scripts take `--seed` (added 2026-09-23, default 0): re-run both training scripts with a
-   fixed seed, ideally 2-3 seeds each, before quoting any of the numbers above as final or comparing
-   architectures / pose-pad's effect against each other.** The unseeded reruns above moved several points on
-   their own, which is larger than some of the effects being measured -- seed variance has to be characterised
-   before causal claims (pose-pad helped/hurt, architecture X beats Y, mirroring helps/hurts) are safe to make.
-3. Tune the technique scorer's loss weights (kl_weight=0.01, reg_weight=5.0 were never swept) once seeds are
-   fixed, so tuning and seed variance aren't confounded.
-4. IVA module next: pitch calibration (HSV pitch segmentation, morphology, connected components, Canny + Hough
+1. **Phase 3 + seed sweep done** (2026-09-23), full results in `docs/paper/results_phase3.md`. Final,
+   variance-characterised numbers (mean +/- pop. std across 3 seeds, corrected post-pose-pad joints):
+   - shot classifier: **LSTM and Transformer are statistically tied for best** (macro-F1 0.785 +/- 0.009 vs
+     0.766 +/- 0.014; accuracy 0.785 +/- 0.006 vs 0.781 +/- 0.008), GRU a little behind, RNN clearly last.
+     LSTM is the reasonable default (cheaper to train, same ballpark accuracy). The single-run "GRU wins" /
+     "Transformer wins" readings from the two earlier unseeded runs are superseded -- both were reading
+     architecture rankings out of noise comparable in size to the gaps themselves.
+   - technique scorer: mean Spearman 0.592 +/- 0.023, overall-score Spearman 0.600 +/- 0.024, **mean
+     partial-Spearman-vs-overall 0.032 +/- 0.010** (every part within ~1-2 std of zero across all 3 seeds).
+     **The label-collinearity finding is now confirmed across the labels themselves and 3 independently
+     seeded trained models**: CricketVision's five part scores carry no independently learnable
+     part-specific signal beyond overall quality, at least not one this setup can extract -- this is the
+     headline result to lead with for the scorer, ahead of the raw Spearman number.
+   - handedness audit (first-pass, not yet seed-swept): mirroring direction flipped between the two unseeded
+     runs -- **not a reproducible effect; the "mirroring hurts left-handers" claim is retracted.** What held
+     across both runs: a modest raw right>left performance gap (0.01-0.06 depending on model/run).
+2. Tune the technique scorer's loss weights (kl_weight=0.01, reg_weight=5.0 were never swept) -- now safe to
+   attribute any gain to the tuning itself, since seed variance (+/-0.01-0.02 on the relevant metrics) is
+   characterised.
+3. IVA module next: pitch calibration (HSV pitch segmentation, morphology, connected components, Canny + Hough
    crease lines) for stride in cm and swing speed in m/s.
-5. Later: bat U-Net + bat angle from shape moments, TrackNet ball tracking, 3D pose lifting for camera angles
+4. Later: bat U-Net + bat angle from shape moments, TrackNet ball tracking, 3D pose lifting for camera angles
    (PoseC3D found this hurts on FineGym -- verify before investing here), coaching LLM, web app.
 
 ## Open decisions

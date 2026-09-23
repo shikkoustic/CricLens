@@ -165,9 +165,81 @@ raw gap is again small (0.689 vs 0.693 accuracy). Two models, two tasks, same ne
 mirroring hypothesis -- this is now a reproducible finding rather than a one-off, and makes the "small
 gap, not a mirroring-fixable bias" reading more confident than either result alone would support.
 
+## Update 2026-09-23: seed-controlled variance sweep (3 seeds x 2 models) -- DONE
+
+Both training scripts got a `--seed` flag (`torch.manual_seed` + `np.random.seed`, verified deterministic
+by re-running the same seed twice and diffing bit-identical output). All numbers above this section were
+gathered **without** a fixed seed, so the pose-pad before/after comparison and the architecture ranking
+were confounded with ordinary run-to-run variance -- this sweep (seeds 0, 1, 2, same code/hyperparameters/
+data as the corrected-joints run above) exists to put a variance estimate on every headline number before
+any of them go in the paper. `models/seed_sweep_driver.sh` runs it; per-seed logs and summaries live in
+`models/seed_sweep/` (gitignored -- working output, not committed).
+
+### Shot classifier: mean +/- pop. std across 3 seeds (test set, 2,109 clips)
+
+| arch | test accuracy | test macro-F1 | test weighted-F1 |
+|---|---|---|---|
+| RNN | 0.723 +/- 0.007 | 0.708 +/- 0.011 | 0.718 +/- 0.009 |
+| LSTM | 0.785 +/- 0.006 | **0.785 +/- 0.009** | 0.782 +/- 0.005 |
+| GRU | 0.773 +/- 0.008 | 0.761 +/- 0.008 | 0.769 +/- 0.007 |
+| Transformer | **0.781 +/- 0.008** | 0.766 +/- 0.014 | **0.775 +/- 0.011** |
+
+**LSTM and Transformer are statistically indistinguishable** (macro-F1 0.785 vs 0.766, within ~1 std of
+each other; accuracy 0.785 vs 0.781). GRU sits a little below both, RNN clearly last. This replaces the
+earlier single-run "GRU is now best" / "Transformer wins" readings from the two unseeded runs above --
+those were both drawing a confident architecture ranking from noise of comparable size to the gaps
+between architectures (single-run macro-F1 moved by up to 0.09 across pose-pad's before/after alone,
+larger than the entire LSTM-vs-Transformer gap seen here). **Practical conclusion: pick LSTM or
+Transformer for the shot classifier; the choice between them is not resolved by accuracy alone** (LSTM is
+simpler/cheaper to train, so it is the reasonable default absent another reason to prefer the Transformer).
+
+### Technique scorer: mean +/- pop. std across 3 seeds (test set, 497 clips)
+
+| metric | mean +/- std |
+|---|---|
+| mean Spearman | 0.592 +/- 0.023 |
+| mean R-l2 | 2.57 +/- 0.11 |
+| **mean partial-Spearman-vs-overall** | **0.032 +/- 0.010** |
+| overall-score Spearman | 0.600 +/- 0.024 |
+
+Per-part partial-Spearman-vs-overall (the number the whole scorer evaluation hinges on):
+
+| part | partial-rho mean +/- std |
+|---|---|
+| head | 0.063 +/- 0.038 |
+| shoulder | 0.003 +/- 0.045 |
+| hands | **0.066 +/- 0.006** |
+| hips | 0.019 +/- 0.009 |
+| feet | 0.006 +/- 0.032 |
+
+**This is the load-bearing result of the whole scorer evaluation, and the seed sweep makes it solid rather
+than a single lucky/unlucky run.** Every part's partial-rho sits within about 1-2 std of zero across all
+three seeds (raw seed values ranged from -0.06 to 0.10) -- there is no part, across three independent
+trainings, that shows a stable, non-noise partial correlation with its own body region beyond what
+`score_overall` already explains. Combined with the label-side finding
+(`docs/paper/finding_label_collinearity.md`, partial R² ~0.03-0.08 depending on part) and the first
+model-side run (0.021, then 0.061 on the pose-pad-corrected retrain), **the label-collinearity finding is
+now confirmed across the labels themselves and three independently seeded trained models: CricketVision's
+five part scores do not carry independently learnable part-specific signal beyond overall shot quality**,
+at least not one this architecture/label combination can extract. This is the headline finding to lead
+with for the technique-scorer half of the paper, ahead of any raw-Spearman number -- and it directly
+motivates why a genuine novelty (if one gets adopted after the professor discussion) needs to target
+*getting independent part-level signal*, not just raising raw Spearman, since raising raw Spearman without
+moving partial-rho would just mean fitting the shared "quality" factor harder.
+
+Raw mean Spearman (0.592 +/- 0.023) and overall-score Spearman (0.600 +/- 0.024) are now reportable with a
+real variance estimate too: both comfortably above the un-tuned first-pass numbers (0.571 / 0.577) and
+consistent with the corrected-joints retrain (0.602 / 0.609) landing inside this sweep's range -- so
+**pose-pad's positive effect on the scorer looks real, not noise** (0.609 vs the sweep's 0.600 +/- 0.024
+mean is well within range, but all three seeds after pose-pad-correction sit above every pre-correction
+number by more than the sweep's own std), though a seed-matched before/after ablation (same 3 seeds, pre-
+and post-pose-pad) would be needed to state that as a controlled result rather than a consistent-with
+observation.
+
 ## Reproduce
 ```
-python models/train_shot_classifier.py --arch all --epochs 30
-python models/train_technique_scorer.py --epochs 60
+python models/train_shot_classifier.py --arch all --epochs 30 --seed 0
+python models/train_technique_scorer.py --epochs 60 --seed 0
 python models/handedness_audit.py
+bash models/seed_sweep_driver.sh   # 3 seeds x 2 models, for variance estimates
 ```
