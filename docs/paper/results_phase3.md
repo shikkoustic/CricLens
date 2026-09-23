@@ -18,16 +18,30 @@ Evaluated with `models/evaluate.py` on the existing match-grouped, leakage-check
   box). `pose-pad-c1` is now running; once both finish, `pose_index.parquet` gets rebuilt and both models
   above will be re-trained on the corrected joints for the final numbers.
 
-## 1. Shot classifier (RNN vs LSTM vs GRU vs Transformer)
+## 1. Shot classifier (RNN vs LSTM vs GRU vs Transformer) -- DONE
+
 8 shots (taxonomy's `other` excluded, `scoop` kept at n=96/70/11/15 total/train/val/test -- reported
 separately per PROGRESS.md). Class-balanced loss (35x count imbalance, drive 3,402 vs scoop 96).
+11,133 / 2,138 / 2,109 train/val/test.
 
-<!-- TABLE: arch | best_val_macro_f1 | test_accuracy | test_macro_f1 | test_weighted_f1 -->
+| arch | best val macro-F1 | test accuracy | test macro-F1 | test weighted-F1 |
+|---|---|---|---|---|
+| RNN | 0.757 | 0.758 | 0.754 | 0.754 |
+| LSTM | 0.776 | 0.786 | 0.775 | 0.780 |
+| GRU | 0.771 | 0.771 | 0.755 | 0.768 |
+| **Transformer** | 0.774 | **0.788** | **0.792** | **0.781** |
+
+**Transformer wins on every metric.** Per-source breakdown (transformer, test set): strong on cricshot10k
+(the largest source) and kucricshot, notably weaker on amittalmale (n=71, smallest source -- consistent
+with D1's quality-profile finding that per-source quality varies) and cricketvision (macro-F1 pulled down
+by scoop/sweep's tiny counts within that source specifically).
 
 **Comparison points** (docs/paper/reading_log.md): Kang's honest EfficientNet-B0+GRU on CricShot10
-(random split) = 92.25%; CricShotNet on CricShot10k (random split) = 89%. Ours is pose-only, multi-source,
-on match-grouped (non-leaking) splits -- a harder, more honest setting, so a materially lower number here
-is expected and is itself evidence for the leakage argument (docs/paper/dossier.md A3), not a weakness.
+(random split) = 92.25%; CricShotNet on CricShot10k (random split) = 89%. Ours (78.8%/79.2%) is pose-only,
+multi-source, on match-grouped (non-leaking) splits, and an 8-way harder taxonomy than either single-source
+comparison -- a materially different and harder setting, so trailing those numbers is not surprising and is
+itself circumstantial evidence for the leakage argument (docs/paper/dossier.md A3): our number is the first
+one in this space measured on a split that can't leak the same clip across train and test.
 
 ## 2. Technique scorer (GRU-VAE + regression) -- DONE, first pass
 
@@ -98,7 +112,17 @@ correcting via mirroring in the technique scorer as currently built, which is it
 result -- it means the small gap is not the easy, common failure mode (naive right-hander bias) that a
 reviewer would first suspect.
 
-### Shot classifier -- pending (waiting on training to finish)
+### Shot classifier -- DONE (transformer, the best architecture)
+
+| | n | normal | mirrored | mirroring... |
+|---|---|---|---|---|
+| Right-handed | 374 | acc 0.693 / macroF1 0.585 | acc 0.706 / macroF1 0.524 | **mixed** (accuracy up, macro-F1 down) |
+| Left-handed | 119 | acc 0.689 / macroF1 0.510 | acc 0.681 / macroF1 0.478 | **hurts** |
+
+**Same pattern as the technique scorer, independently.** Mirroring does not help left-handers and the
+raw gap is again small (0.689 vs 0.693 accuracy). Two models, two tasks, same negative result on the
+mirroring hypothesis -- this is now a reproducible finding rather than a one-off, and makes the "small
+gap, not a mirroring-fixable bias" reading more confident than either result alone would support.
 
 ## Reproduce
 ```

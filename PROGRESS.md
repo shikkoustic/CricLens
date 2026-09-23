@@ -34,17 +34,22 @@ account; runners retry every 5 min when both are busy. Resume = re-run the runne
 Details: `docs/iva/iva_results.md`; syllabus mapping: `docs/iva/syllabus_alignment.md`.
 
 ## Next steps (in order)
-1. Once `kaggle/pose-pad` finishes: rebuild `pose_index.parquet` (`models/pose_index.py`, picks up the
-   overlay automatically) then re-run `models/resample_sequences.py` so the resampled sequences reflect the
-   unclamped joints for the clips that were affected.
-2. **Phase 3: train the models** on `data/processed/sequences.parquet` (train-ready clips), scored with
-   `models/evaluate.py`: shot classifier (RNN vs LSTM vs GRU vs Transformer), technique scorer (VAE +
-   regression on CricketVision scores -- report partial Spearman per part, not just raw, per finding #17),
-   left/right bias audit. Note: `scoop` has only 96 clips; merge or report separately.
-3. IVA module next: pitch calibration (HSV pitch segmentation, morphology, connected components, Canny + Hough
+1. **Phase 3 is done, first pass** (2026-09-23), full results in `docs/paper/results_phase3.md`:
+   - shot classifier: transformer best, test accuracy 0.788 / macro-F1 0.792 (RNN 0.754, LSTM 0.775, GRU 0.755)
+   - technique scorer: mean Spearman 0.571; mean partial-Spearman-vs-overall 0.021 (~zero -- confirms
+     finding #17 on a real trained model, not just the labels)
+   - handedness audit (mirroring): no support for the hypothesis on either model; small raw gap, mirroring
+     doesn't close it and sometimes widens it -- reproducible across both models
+2. Once `kaggle/pose-pad` finishes (both chunks): rebuild `pose_index.parquet` (`models/pose_index.py`,
+   picks up the overlay automatically), re-run `models/resample_sequences.py`, and re-train both models on
+   the corrected joints for final numbers (expect a small change -- `pose-pad-c0`'s effect was mild: usable
+   rate 91.65%->91.67%, confidence 0.831->0.834).
+3. Tune the technique scorer before treating 0.571/0.577 as final: this was one architecture, un-tuned loss
+   weights (kl_weight=0.01, reg_weight=5.0), 19 epochs. A sweep is the obvious next step.
+4. IVA module next: pitch calibration (HSV pitch segmentation, morphology, connected components, Canny + Hough
    crease lines) for stride in cm and swing speed in m/s.
-4. Later: bat U-Net + bat angle from shape moments, TrackNet ball tracking, 3D pose lifting for camera angles,
-   coaching LLM, web app.
+5. Later: bat U-Net + bat angle from shape moments, TrackNet ball tracking, 3D pose lifting for camera angles
+   (PoseC3D found this hurts on FineGym -- verify before investing here), coaching LLM, web app.
 
 ## Open decisions
 - Practice/nets/shadow-batting videos (no bowler or ball) are parked; focus is match clips for now.
