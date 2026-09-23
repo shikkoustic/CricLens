@@ -49,4 +49,6 @@ novelty contribution that makes the work publishable. Not started. Engineering n
 meanwhile. Context: `docs/claude/context.md`.
 
 ## Open decisions
+- `scoop` (96 clips) stays a class for now rather than being merged into `lofted`; how many shot classes
+  the final head keeps is decided later, once training shows which ones are separable.
 - Practice/nets/shadow-batting videos (no bowler or ball) are parked; focus is match clips for now.
