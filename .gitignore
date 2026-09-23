@@ -16,3 +16,4 @@ kaggle/pose-rest-audit/*.jpg
 models/seed_sweep/
 models/shot_classifier/
 models/technique_scorer/
+models/tune_sweep/

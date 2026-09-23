@@ -199,9 +199,11 @@ def main():
     ap.add_argument("--limit", type=int, default=None)
     ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     ap.add_argument("--seed", type=int, default=0, help="see models/train_shot_classifier.py --seed")
+    ap.add_argument("--kl-weight", type=float, default=0.01, help="never swept before 2026-09-23, see PROGRESS.md")
+    ap.add_argument("--reg-weight", type=float, default=5.0, help="never swept before 2026-09-23, see PROGRESS.md")
     args = ap.parse_args()
     torch.manual_seed(args.seed); np.random.seed(args.seed)
-    run(args.epochs, args.limit, args.device)
+    run(args.epochs, args.limit, args.device, kl_weight=args.kl_weight, reg_weight=args.reg_weight)
 
 
 if __name__ == "__main__":
