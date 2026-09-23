@@ -171,7 +171,11 @@ def main():
     ap.add_argument("--epochs", type=int, default=30)
     ap.add_argument("--limit", type=int, default=None, help="cap total clips, for a fast smoke test")
     ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
+    ap.add_argument("--seed", type=int, default=0, help="fixes data shuffling and weight init, so re-runs "
+                     "are comparable (docs/paper/results_phase3.md found unseeded reruns moved several "
+                     "points on their own -- comparing architectures or pose-pad's effect needs this fixed)")
     args = ap.parse_args()
+    torch.manual_seed(args.seed); np.random.seed(args.seed)
     archs = ["rnn", "lstm", "gru", "transformer"] if args.arch == "all" else [args.arch]
     summary = [run(a, args.epochs, args.limit, args.device) for a in archs]
     OUT_DIR.mkdir(parents=True, exist_ok=True)

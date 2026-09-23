@@ -26,7 +26,7 @@ account; runners retry every 5 min when both are busy. Resume = re-run the runne
 | 11 | IVA D1: quality profile of all clips (Kaggle CPU) | darkness not a problem; CricShot10k blurred/compressed |
 | 12 | IVA D2: enhancement on 800 flagged clips + bat check | no enhancement helps pose; CLAHE raises bat detection (~89% of extra detections real) |
 | 13 | IVA D3: degradation/restoration + padding study | adaptive median best for impulse noise; zero padding cuts edge-case pose error 20-60% |
-| 14 | Zero-padding re-run: crop clamp removed from pose scripts, `kaggle/pose-pad` re-estimates joints for every clip that was clamped | 10,271 clips queued; launched on Kaggle 2026-09-23, in progress |
+| 14 | Zero-padding re-run: crop clamp removed from pose scripts, `kaggle/pose-pad` re-estimates joints for every clip that was clamped | **done** -- 10,271 clips, 0 failures; usable rate ~unchanged (+1 clip net), confidence improved for ~78% of clips |
 | 15 | Frame-rate normalisation: every clip's window resampled to T=32 frames over normalised time (`models/resample_sequences.py`) | all 22,420 clips, 0 failures, 99.9% real (non-imputed) joint data; `data/processed/sequences.parquet` |
 | 16 | Evaluation harness (`models/evaluate.py`): shared accuracy/F1/confusion-matrix and Spearman/R-ℓ2, with per-source/handedness breakdowns and a split-leakage check | built before any model, so every model is scored the same way |
 | 17 | **Finding**: CricketVision's five body-part scores are ~one signal, not five (`docs/paper/finding_label_collinearity.md`) | raw corr 0.95-0.99, PC1 = 97.5% of variance, `score_overall` alone explains 97-99% of each part; changes how the scorer must be evaluated |
@@ -34,18 +34,25 @@ account; runners retry every 5 min when both are busy. Resume = re-run the runne
 Details: `docs/iva/iva_results.md`; syllabus mapping: `docs/iva/syllabus_alignment.md`.
 
 ## Next steps (in order)
-1. **Phase 3 is done, first pass** (2026-09-23), full results in `docs/paper/results_phase3.md`:
-   - shot classifier: transformer best, test accuracy 0.788 / macro-F1 0.792 (RNN 0.754, LSTM 0.775, GRU 0.755)
-   - technique scorer: mean Spearman 0.571; mean partial-Spearman-vs-overall 0.021 (~zero -- confirms
-     finding #17 on a real trained model, not just the labels)
-   - handedness audit (mirroring): no support for the hypothesis on either model; small raw gap, mirroring
-     doesn't close it and sometimes widens it -- reproducible across both models
-2. Once `kaggle/pose-pad` finishes (both chunks): rebuild `pose_index.parquet` (`models/pose_index.py`,
-   picks up the overlay automatically), re-run `models/resample_sequences.py`, and re-train both models on
-   the corrected joints for final numbers (expect a small change -- `pose-pad-c0`'s effect was mild: usable
-   rate 91.65%->91.67%, confidence 0.831->0.834).
-3. Tune the technique scorer before treating 0.571/0.577 as final: this was one architecture, un-tuned loss
-   weights (kl_weight=0.01, reg_weight=5.0), 19 epochs. A sweep is the obvious next step.
+1. **Phase 3 done, retrained on corrected (post-pose-pad) joints** (2026-09-23), full results and the
+   before/after comparison in `docs/paper/results_phase3.md`. Headline numbers (this run; **no fixed seed
+   was used, see point 2**):
+   - shot classifier: GRU best this run, test accuracy 0.784 / macro-F1 0.776 (architectures moved in both
+     directions vs the first run -- not yet a settled comparison, see point 2)
+   - technique scorer: mean Spearman 0.602 (up from 0.571), mean partial-Spearman-vs-overall 0.061 (still
+     near-zero) -- **the label-collinearity finding (#17) is now confirmed on two independently trained
+     models**, which matters more than either single Spearman number
+   - handedness audit: re-run flipped the mirroring direction found in the first run (helped left-handers
+     this time, hurt them last time) -- **not a reproducible effect; retract the "mirroring hurts" framing
+     from the first pass.** What did hold across both runs: a modest raw right>left gap, present in all 4
+     audits so far, magnitude 0.01-0.06 depending on model/run.
+2. **Now that both scripts take `--seed` (added 2026-09-23, default 0): re-run both training scripts with a
+   fixed seed, ideally 2-3 seeds each, before quoting any of the numbers above as final or comparing
+   architectures / pose-pad's effect against each other.** The unseeded reruns above moved several points on
+   their own, which is larger than some of the effects being measured -- seed variance has to be characterised
+   before causal claims (pose-pad helped/hurt, architecture X beats Y, mirroring helps/hurts) are safe to make.
+3. Tune the technique scorer's loss weights (kl_weight=0.01, reg_weight=5.0 were never swept) once seeds are
+   fixed, so tuning and seed variance aren't confounded.
 4. IVA module next: pitch calibration (HSV pitch segmentation, morphology, connected components, Canny + Hough
    crease lines) for stride in cm and swing speed in m/s.
 5. Later: bat U-Net + bat angle from shape moments, TrackNet ball tracking, 3D pose lifting for camera angles

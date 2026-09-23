@@ -18,6 +18,47 @@ Evaluated with `models/evaluate.py` on the existing match-grouped, leakage-check
   box). `pose-pad-c1` is now running; once both finish, `pose_index.parquet` gets rebuilt and both models
   above will be re-trained on the corrected joints for the final numbers.
 
+## Update 2026-09-23: retrained on corrected joints (`pose-pad` complete)
+
+Both `pose-pad` chunks finished (10,271 clips total, 0 failures; usable rate 91.65%->91.67% (c0),
+92.21%->92.21% (c1); confidence improved for ~78% of clips in both chunks). `pose_index.parquet` was
+rebuilt and `data/processed/sequences.parquet` re-resampled on the corrected joints (22,420 clips, 0
+failures). Both models were then retrained from scratch on the corrected data, same code, same
+hyperparameters. **Neither training run used a fixed random seed**, so any difference below is a mix of
+the pose-pad correction and ordinary training-run variance (data shuffling, dropout, VAE sampling) --
+the numbers are not a controlled ablation of pose-pad's effect alone.
+
+**Shot classifier** -- moved in both directions across architectures, consistent with variance rather
+than a clean pose-pad effect: RNN 0.754->0.681, LSTM 0.775->0.750, GRU 0.755->**0.776** (now best),
+Transformer 0.792->0.769 (macro-F1). The best architecture changed from transformer to GRU. Read this as
+"architecture choice is not yet settled from one run each" rather than "pose-pad hurt the transformer."
+
+**Technique scorer** -- improved consistently across every metric: mean Spearman 0.571->**0.602**,
+mean R-l2 2.93->**2.48**, overall-score Spearman 0.577->**0.609**. This is a bigger, more one-directional
+move than the classifier's, but still cannot be cleanly attributed to pose-pad without a seed-matched
+rerun (planned as a real ablation before the number goes in the paper).
+
+**The finding that matters held up on an independent run: mean partial-Spearman-vs-overall = 0.061**
+(was 0.021), per-part range -0.006 to 0.125. Still far below what would indicate real independent
+per-part discrimination (compare to the >=0.8 a genuinely part-specific model showed in the synthetic
+validation of the metric itself, `models/evaluate.py`'s docstring example). **The label-collinearity
+finding is now confirmed on two independently trained models, not one** -- this is the more important
+reproducibility story here, more so than either single Spearman number.
+
+**Handedness audit, re-run on the new models: the mirroring direction flipped.** First run: mirroring
+hurt left-handers on both models. This run: mirroring *helps* left-handers on both models (scorer
+0.563->0.564; classifier-GRU accuracy 0.664->0.689) and is roughly neutral-to-negative for right-handers.
+**Correction to the earlier write-up below: "mirroring hurts left-handers" was not a reproducible finding
+-- it flipped sign on retraining.** What does hold across both runs, in direction if not magnitude: right-
+handers score somewhat higher than left-handers on raw (unmirrored) performance in every one of the four
+audits run so far (scorer run 1: 0.574 vs 0.562; run 2: 0.612 vs 0.563; classifier run 1: 0.693 vs 0.689
+acc; run 2: 0.719 vs 0.664 acc). The honest conclusion: there is a real, if modest and variable-magnitude,
+left/right performance gap, but test-time mirroring is not a reliable intervention for it in either
+direction -- its effect is dominated by which particular model got trained, not by whether the clip was
+mirrored. A cleaner test of the underlying hypothesis would train on mirror-canonicalised data throughout
+(not just test-time), across several seeds, before drawing a conclusion either way.
+
+
 ## 1. Shot classifier (RNN vs LSTM vs GRU vs Transformer) -- DONE
 
 8 shots (taxonomy's `other` excluded, `scoop` kept at n=96/70/11/15 total/train/val/test -- reported
