@@ -10,10 +10,13 @@ Evaluated with `models/evaluate.py` on the existing match-grouped, leakage-check
   over normalised time (`models/resample_sequences.py`).
 - Spatial normalisation (`models/train_shot_classifier.py::normalise`): per-frame hip-centred (COCO
   joints 11/12), per-clip scale by median shoulder-hip distance. Confidence channel kept, un-normalised.
-- Trained on data *before* the `kaggle/pose-pad` zero-padding re-run lands (see PROGRESS.md next steps);
-  clamping was measured mild (76% of affected frames lose only 5-10% of the padded box), so the effect
-  of re-running on the corrected joints is expected to be small. Flagged here for the honest record --
-  will re-run both once `pose_index.parquet` is rebuilt.
+- **Trained on data from before the `kaggle/pose-pad` zero-padding re-run.** `pose-pad-c0` (5,136 clips)
+  finished 2026-09-23: usability essentially unchanged (91.65% -> 91.67%, +1 clip, 0 lost), mean window
+  confidence improved slightly (0.8306 -> 0.8336, improved for 76% of clips), bone-length-consistency
+  plausibility check improved for exactly half of clips (a wash there). Small but real, no regressions --
+  as predicted from the earlier severity analysis (76% of clamped frames lose only 5-10% of the padded
+  box). `pose-pad-c1` is now running; once both finish, `pose_index.parquet` gets rebuilt and both models
+  above will be re-trained on the corrected joints for the final numbers.
 
 ## 1. Shot classifier (RNN vs LSTM vs GRU vs Transformer)
 8 shots (taxonomy's `other` excluded, `scoop` kept at n=96/70/11/15 total/train/val/test -- reported
