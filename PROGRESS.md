@@ -28,6 +28,8 @@ account; runners retry every 5 min when both are busy. Resume = re-run the runne
 | 13 | IVA D3: degradation/restoration + padding study | adaptive median best for impulse noise; zero padding cuts edge-case pose error 20-60% |
 | 14 | Zero-padding re-run: crop clamp removed from pose scripts, `kaggle/pose-pad` re-estimates joints for every clip that was clamped | 10,271 clips queued; launched on Kaggle 2026-09-23, in progress |
 | 15 | Frame-rate normalisation: every clip's window resampled to T=32 frames over normalised time (`models/resample_sequences.py`) | all 22,420 clips, 0 failures, 99.9% real (non-imputed) joint data; `data/processed/sequences.parquet` |
+| 16 | Evaluation harness (`models/evaluate.py`): shared accuracy/F1/confusion-matrix and Spearman/R-ℓ2, with per-source/handedness breakdowns and a split-leakage check | built before any model, so every model is scored the same way |
+| 17 | **Finding**: CricketVision's five body-part scores are ~one signal, not five (`docs/paper/finding_label_collinearity.md`) | raw corr 0.95-0.99, PC1 = 97.5% of variance, `score_overall` alone explains 97-99% of each part; changes how the scorer must be evaluated |
 
 Details: `docs/iva/iva_results.md`; syllabus mapping: `docs/iva/syllabus_alignment.md`.
 
@@ -35,15 +37,13 @@ Details: `docs/iva/iva_results.md`; syllabus mapping: `docs/iva/syllabus_alignme
 1. Once `kaggle/pose-pad` finishes: rebuild `pose_index.parquet` (`models/pose_index.py`, picks up the
    overlay automatically) then re-run `models/resample_sequences.py` so the resampled sequences reflect the
    unclamped joints for the clips that were affected.
-2. **Evaluation harness**: shared accuracy/F1/confusion-matrix (shots) and Spearman + R-ℓ2 (scores) on the
-   grouped splits, with per-source and per-handedness breakdowns. Build before any model, so every model
-   plugs into the same measurement.
-3. **Phase 3: train the models** on `data/processed/sequences.parquet` (train-ready clips): shot classifier
-   (RNN vs LSTM vs GRU vs Transformer), technique scorer (VAE + regression on CricketVision scores),
+2. **Phase 3: train the models** on `data/processed/sequences.parquet` (train-ready clips), scored with
+   `models/evaluate.py`: shot classifier (RNN vs LSTM vs GRU vs Transformer), technique scorer (VAE +
+   regression on CricketVision scores -- report partial Spearman per part, not just raw, per finding #17),
    left/right bias audit. Note: `scoop` has only 96 clips; merge or report separately.
-4. IVA module next: pitch calibration (HSV pitch segmentation, morphology, connected components, Canny + Hough
+3. IVA module next: pitch calibration (HSV pitch segmentation, morphology, connected components, Canny + Hough
    crease lines) for stride in cm and swing speed in m/s.
-5. Later: bat U-Net + bat angle from shape moments, TrackNet ball tracking, 3D pose lifting for camera angles,
+4. Later: bat U-Net + bat angle from shape moments, TrackNet ball tracking, 3D pose lifting for camera angles,
    coaching LLM, web app.
 
 ## Open decisions

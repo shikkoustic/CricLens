@@ -619,9 +619,17 @@ where we found 157 duplicate clusters with 75 spanning its own official splits. 
 the fix and for the contribution type: F6 (geospatial, 89% duplicates / 93–97% leakage, pHash pipeline).
 The VLM-judge paper (C6) even masks scoreboards *"to prevent data leakage"*.
 
-### ✓ CONFIRMED — Gap 6 (per-part scores may not be discriminative)
-Unchanged and still the sharpest available result: per-part SRC spread of **0.003** across five body parts.
-Testable today from `manifest.parquet` at zero compute cost.
+### ✓✓ CONFIRMED WITH DATA — Gap 6 (per-part scores are not discriminative)
+No longer inferred from the 0.003 spread in someone else's results — tested directly on our own 4,872
+scored train-ready clips (`models/label_correlation_analysis.py`, full writeup
+`docs/paper/finding_label_collinearity.md`). Raw correlation between the five part scores: **0.951–0.987**.
+One principal component explains **97.5%** of joint variance. `score_overall` alone explains **96.7–99.2%**
+of each part's variance. Partial correlations, controlling for the other three parts, collapse to near
+zero or flip sign (several -0.19 to -0.59). **The five CricketVision body-part scores are, to first
+approximation, one signal.** I3D-AE-LSTM's near-identical per-part Spearman is the expected result of
+predicting one latent quality signal against five collinear labels, not evidence of independent per-part
+assessment. This is now a headline candidate, not a side note — see the findings doc for what it requires
+of our own evaluation (report partial Spearman, not just raw per-part Spearman, once a scorer exists).
 
 ### ✓ CONFIRMED — Gap 7 (RGB stream earns little)
 Their own ablation: pose-only 0.79 → +I3D 0.84. Reinforced by the survey's call (B8) for
