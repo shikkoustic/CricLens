@@ -26,17 +26,21 @@ account; runners retry every 5 min when both are busy. Resume = re-run the runne
 | 11 | IVA D1: quality profile of all clips (Kaggle CPU) | darkness not a problem; CricShot10k blurred/compressed |
 | 12 | IVA D2: enhancement on 800 flagged clips + bat check | no enhancement helps pose; CLAHE raises bat detection (~89% of extra detections real) |
 | 13 | IVA D3: degradation/restoration + padding study | adaptive median best for impulse noise; zero padding cuts edge-case pose error 20-60% |
+| 14 | Zero-padding re-run: crop clamp removed from pose scripts, `kaggle/pose-pad` re-estimates joints for every clip that was clamped | 10,271 clips queued; launched on Kaggle 2026-09-23, in progress |
+| 15 | Frame-rate normalisation: every clip's window resampled to T=32 frames over normalised time (`models/resample_sequences.py`) | all 22,420 clips, 0 failures, 99.9% real (non-imputed) joint data; `data/processed/sequences.parquet` |
 
 Details: `docs/iva/iva_results.md`; syllabus mapping: `docs/iva/syllabus_alignment.md`.
 
 ## Next steps (in order)
-1. **Zero-padding re-run** on the 4,461 clips whose batter crop leaves the frame (pose only, reuse saved
-   boxes; ~40 min Kaggle GPU). Change crop padding in the pose scripts from clamping to
-   `cv2.copyMakeBorder(..., BORDER_CONSTANT)`, then rebuild `pose_index.parquet` with `models/pose_index.py`.
-2. **Frame-rate normalisation**: clips are 25 or 30 fps; resample joint sequences to one rate before training.
-3. **Phase 3: train the models** on `pose_index.parquet` (train-ready clips): shot classifier (RNN vs LSTM vs
-   GRU vs Transformer), technique scorer (VAE + regression on CricketVision scores), left/right bias audit.
-   Note: `scoop` has only 96 clips; merge or report separately.
+1. Once `kaggle/pose-pad` finishes: rebuild `pose_index.parquet` (`models/pose_index.py`, picks up the
+   overlay automatically) then re-run `models/resample_sequences.py` so the resampled sequences reflect the
+   unclamped joints for the clips that were affected.
+2. **Evaluation harness**: shared accuracy/F1/confusion-matrix (shots) and Spearman + R-ℓ2 (scores) on the
+   grouped splits, with per-source and per-handedness breakdowns. Build before any model, so every model
+   plugs into the same measurement.
+3. **Phase 3: train the models** on `data/processed/sequences.parquet` (train-ready clips): shot classifier
+   (RNN vs LSTM vs GRU vs Transformer), technique scorer (VAE + regression on CricketVision scores),
+   left/right bias audit. Note: `scoop` has only 96 clips; merge or report separately.
 4. IVA module next: pitch calibration (HSV pitch segmentation, morphology, connected components, Canny + Hough
    crease lines) for stride in cm and swing speed in m/s.
 5. Later: bat U-Net + bat angle from shape moments, TrackNet ball tracking, 3D pose lifting for camera angles,
