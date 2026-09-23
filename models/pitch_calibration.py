@@ -92,17 +92,22 @@ def _line_angle(seg: np.ndarray) -> float:
 
 
 def crease_pair_scale(lines: np.ndarray) -> float | None:
-    """Two near-parallel segments, laterally (not vertically) offset from each other by a plausible
-    pixel distance = the two return creases, 2.64 m apart by law -> cm/px. Requires the offset between
-    the pair to be mostly horizontal (two lines at the same pitch depth, side by side) -- without this,
-    a near-end and far-end line (vertically separated by perspective, not by the crease width) can match
-    the angle+distance test and give a wildly wrong scale. None if no plausible pair exists."""
+    """Two near-parallel, near-VERTICAL segments, laterally offset from each other by a plausible pixel
+    distance = the two return creases, 2.64 m apart by law -> cm/px. The camera always looks down the
+    pitch length, so a genuine return crease is always closer to vertical than horizontal in the image;
+    requiring that up front rejects the dominant false-positive mode -- a horizontal seam (scoreboard-bar
+    edge, popping-crease fragments) broken by Hough into two collinear pieces, which are "near-parallel"
+    and "laterally offset" by the same tests a real pair would pass, just along the wrong axis. The
+    lateral-vs-depth offset check (dx >= 2*dy) then rejects a near-end/far-end mismatch (vertically
+    separated by perspective, not by the crease width) among genuinely vertical candidates. None if no
+    plausible pair exists."""
     if lines is None or len(lines) < 2:
         return None
+    vertical = [ln for ln in lines if abs(_line_angle(ln) - 90) < 40]
     best = None
-    for i in range(len(lines)):
-        for j in range(i + 1, len(lines)):
-            a, b = lines[i], lines[j]
+    for i in range(len(vertical)):
+        for j in range(i + 1, len(vertical)):
+            a, b = vertical[i], vertical[j]
             da = abs(_line_angle(a) - _line_angle(b))
             da = min(da, 180 - da)
             if da > 15:

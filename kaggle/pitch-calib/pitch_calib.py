@@ -85,12 +85,17 @@ def _line_angle(seg):
 
 
 def crease_pair_scale(lines):
+    """See models/pitch_calibration.py's crease_pair_scale docstring: candidates are restricted to
+    near-vertical lines first (a genuine return crease is always closer to vertical than horizontal),
+    which rejects the dominant false-positive mode -- a horizontal seam (scoreboard-bar edge) broken by
+    Hough into two collinear pieces that would otherwise pass the parallel+offset test."""
     if lines is None or len(lines) < 2:
         return None
+    vertical = [ln for ln in lines if abs(_line_angle(ln) - 90) < 40]
     best = None
-    for i in range(len(lines)):
-        for j in range(i + 1, len(lines)):
-            a, b = lines[i], lines[j]
+    for i in range(len(vertical)):
+        for j in range(i + 1, len(vertical)):
+            a, b = vertical[i], vertical[j]
             da = abs(_line_angle(a) - _line_angle(b)); da = min(da, 180 - da)
             if da > 15:
                 continue
