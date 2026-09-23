@@ -13,3 +13,4 @@ kaggle/chunks/
 kaggle/*-smoke*/
 kaggle/progress.json.lock
 kaggle/pose-rest-audit/*.jpg
+models/seed_sweep/
