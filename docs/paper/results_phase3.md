@@ -236,10 +236,50 @@ number by more than the sweep's own std), though a seed-matched before/after abl
 and post-pose-pad) would be needed to state that as a controlled result rather than a consistent-with
 observation.
 
+## Update 2026-09-23: technique scorer loss-weight tuning -- DONE
+
+`kl_weight` and `reg_weight` (VAE reconstruction-vs-regression tradeoff) were never swept before this --
+the seed sweep above only characterised variance at the untuned defaults (kl_weight=0.01, reg_weight=5.0).
+Ran a 3x3 grid (`models/tune_technique_scorer_driver.sh`: kl_weight in {0.001, 0.01, 0.1}, reg_weight in
+{2, 5, 10}, fixed seed=0 so the grid search itself isn't confounded with seed variance) and picked the
+winner by **validation** mean-Spearman (not test, to avoid picking on the metric being reported):
+
+| kl_weight | reg_weight | val mean-rho | test mean-rho | test R-l2 | test partial-rho | test overall-rho |
+|---|---|---|---|---|---|---|
+| **0.001** | **10.0** | **0.631** | 0.592 | 2.57 | 0.042 | 0.599 |
+| 0.01 | 10.0 | 0.628 | 0.584 | 2.51 | 0.033 | 0.591 |
+| 0.1 | 2.0 | 0.626 | 0.561 | 3.59 | 0.045 | 0.570 |
+| 0.001 | 2.0 | 0.624 | 0.594 | 2.63 | 0.042 | 0.603 |
+| ... | | | | | | |
+| 0.01 (old default) | 5.0 (old default) | **0.584 (worst)** | 0.561 | 2.73 | 0.018 | 0.568 |
+
+**The untuned defaults were the worst combination in the grid.** The winner (kl_weight=0.001,
+reg_weight=10.0 -- less pressure on the VAE's reconstruction/KL terms, more on the actual score
+regression) is now the script's new default. Confirmed across the same 3 seeds used above
+(`models/tune_confirm/`):
+
+| metric | untuned default (kl=0.01, reg=5.0) | **tuned (kl=0.001, reg=10.0)** |
+|---|---|---|
+| mean Spearman | 0.592 +/- 0.023 | **0.603 +/- 0.010** |
+| mean R-l2 | 2.57 +/- 0.11 | **2.48 +/- 0.08** |
+| mean partial-rho (vs overall) | 0.032 +/- 0.010 | 0.033 +/- 0.010 |
+| overall-score Spearman | 0.600 +/- 0.024 | **0.611 +/- 0.010** |
+
+**Two real effects, not one.** The tuned weights give a modest point-estimate improvement on every raw
+metric (mean Spearman +0.011, overall-rho +0.011, R-l2 -0.09), but more importantly **cut the run-to-run
+std roughly in half** (0.023 -> 0.010 on mean Spearman) -- a same-magnitude, more reliable result. The
+**partial-Spearman-vs-overall stayed flat at ~0.03**, exactly as expected: that number reflects the
+labels' own collinearity (`docs/paper/finding_label_collinearity.md`), not a model-tunable quantity, and
+its stability under a hyperparameter sweep that moved everything else is further confirmation the
+label-collinearity finding is a property of the data, not an artifact of one training configuration.
+Per-part partial-rho with tuned weights: head 0.074, shoulder 0.010, hands 0.052, hips -0.013, feet
+0.043 -- still all within noise of zero.
+
 ## Reproduce
 ```
 python models/train_shot_classifier.py --arch all --epochs 30 --seed 0
-python models/train_technique_scorer.py --epochs 60 --seed 0
+python models/train_technique_scorer.py --epochs 60 --seed 0   # now defaults to tuned kl=0.001, reg=10.0
 python models/handedness_audit.py
-bash models/seed_sweep_driver.sh   # 3 seeds x 2 models, for variance estimates
+bash models/seed_sweep_driver.sh              # 3 seeds x 2 models, for variance estimates
+bash models/tune_technique_scorer_driver.sh   # 3x3 loss-weight grid, technique scorer only
 ```

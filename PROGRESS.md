@@ -32,6 +32,7 @@ account; runners retry every 5 min when both are busy. Resume = re-run the runne
 | 16 | Evaluation harness (`models/evaluate.py`): shared accuracy/F1/confusion-matrix and Spearman/R-ℓ2, with per-source/handedness breakdowns and a split-leakage check | built before any model, so every model is scored the same way |
 | 17 | **Finding**: CricketVision's five body-part scores are ~one signal, not five (`docs/paper/finding_label_collinearity.md`) | raw corr 0.95-0.99, PC1 = 97.5% of variance, `score_overall` alone explains 97-99% of each part; changes how the scorer must be evaluated |
 | 18 | Seed-controlled variance sweep (3 seeds x 2 models, `models/seed_sweep_driver.sh`) | full mean+/-std results in `docs/paper/results_phase3.md`; label-collinearity finding now confirmed across labels + 3 independently seeded trained models |
+| 19 | Technique scorer loss-weight tuning (3x3 grid, `models/tune_technique_scorer_driver.sh`) | untuned defaults were the worst combo in the grid; new default kl_weight=0.001/reg_weight=10.0 gives mean Spearman 0.603+/-0.010 (up from 0.592+/-0.023) -- modest gain, ~half the run-to-run variance |
 
 Details: `docs/iva/iva_results.md`; syllabus mapping: `docs/iva/syllabus_alignment.md`.
 
@@ -52,9 +53,10 @@ Details: `docs/iva/iva_results.md`; syllabus mapping: `docs/iva/syllabus_alignme
    - handedness audit (first-pass, not yet seed-swept): mirroring direction flipped between the two unseeded
      runs -- **not a reproducible effect; the "mirroring hurts left-handers" claim is retracted.** What held
      across both runs: a modest raw right>left performance gap (0.01-0.06 depending on model/run).
-2. Tune the technique scorer's loss weights (kl_weight=0.01, reg_weight=5.0 were never swept) -- now safe to
-   attribute any gain to the tuning itself, since seed variance (+/-0.01-0.02 on the relevant metrics) is
-   characterised.
+2. **Loss-weight tuning done** (2026-09-23, #19 above) -- technique scorer's new defaults (kl_weight=0.001,
+   reg_weight=10.0) give a modest, seed-confirmed gain and much tighter variance. Model training for phase 3
+   is now considered final: shot classifier (LSTM or Transformer) and technique scorer (tuned weights) both
+   have variance-characterised numbers ready to quote in the paper.
 3. IVA module next: pitch calibration (HSV pitch segmentation, morphology, connected components, Canny + Hough
    crease lines) for stride in cm and swing speed in m/s.
 4. Later: bat U-Net + bat angle from shape moments, TrackNet ball tracking, 3D pose lifting for camera angles

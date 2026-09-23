@@ -122,7 +122,7 @@ def vae_loss(recon, x, mu, logvar, scores, y, kl_weight: float, reg_weight: floa
 
 
 def run(epochs: int, limit: int | None, device: str, batch_size: int = 64, patience: int = 8,
-        kl_weight: float = 0.01, reg_weight: float = 5.0) -> dict:
+        kl_weight: float = 0.001, reg_weight: float = 10.0) -> dict:
     d, mu_t, sd_t = load_scored_sequences(limit)
     tr, va, te = (d[d.split == s] for s in ("train", "val", "test"))
     print(f"train={len(tr)} val={len(va)} test={len(te)}")
@@ -199,8 +199,8 @@ def main():
     ap.add_argument("--limit", type=int, default=None)
     ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     ap.add_argument("--seed", type=int, default=0, help="see models/train_shot_classifier.py --seed")
-    ap.add_argument("--kl-weight", type=float, default=0.01, help="never swept before 2026-09-23, see PROGRESS.md")
-    ap.add_argument("--reg-weight", type=float, default=5.0, help="never swept before 2026-09-23, see PROGRESS.md")
+    ap.add_argument("--kl-weight", type=float, default=0.001, help="tuned 2026-09-23 via models/tune_technique_scorer_driver.sh, see PROGRESS.md")
+    ap.add_argument("--reg-weight", type=float, default=10.0, help="tuned 2026-09-23 via models/tune_technique_scorer_driver.sh, see PROGRESS.md")
     args = ap.parse_args()
     torch.manual_seed(args.seed); np.random.seed(args.seed)
     run(args.epochs, args.limit, args.device, kl_weight=args.kl_weight, reg_weight=args.reg_weight)
