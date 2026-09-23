@@ -1,0 +1,42 @@
+{
+  "best_val_mean_spearman": 0.6004614649684691,
+  "test_mean_spearman": 0.5711239080835128,
+  "test_mean_r_l2": 2.9292710255761407,
+  "test_mean_partial_spearman_vs_overall": 0.020838502726205917,
+  "test_overall_spearman": 0.5769505047110642,
+  "per_part": {
+    "head": {
+      "n": 497,
+      "spearman": 0.5759624195983336,
+      "r_l2": 2.8118144685933792,
+      "partial_spearman_vs_overall": 0.05244349749853353
+    },
+    "shoulder": {
+      "n": 497,
+      "spearman": 0.5752089522203516,
+      "r_l2": 2.9484871725090076,
+      "partial_spearman_vs_overall": -0.01110090608379156
+    },
+    "hands": {
+      "n": 497,
+      "spearman": 0.5758254346476501,
+      "r_l2": 3.0546863127708255,
+      "partial_spearman_vs_overall": -0.008775612880937424
+    },
+    "hips": {
+      "n": 497,
+      "spearman": 0.5583096633727924,
+      "r_l2": 3.0111292087242747,
+      "partial_spearman_vs_overall": 0.0619271786405078
+    },
+    "feet": {
+      "n": 497,
+      "spearman": 0.5701228940465356,
+      "r_l2": 2.820237965283215,
+      "partial_spearman_vs_overall": 0.009586325627937004
+    }
+  },
+  "n_train": 3718,
+  "n_val": 657,
+  "n_test": 497
+}
