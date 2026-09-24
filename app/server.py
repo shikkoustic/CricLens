@@ -8,6 +8,7 @@ pose model and the LLM are CPU-heavy, so parallel jobs would only slow each othe
 import os
 import queue
 import re
+import shutil
 import threading
 import time
 import traceback
@@ -30,6 +31,7 @@ RUNTIME = APP / "runtime"
 JOBS_DIR, THUMBS = RUNTIME / "jobs", RUNTIME / "thumbs"
 SAMPLES_DIR = Path(os.environ.get("CRICLENS_SAMPLES_DIR", ROOT / "data/interim/clips"))
 SAMPLE_LIMIT = int(os.environ.get("CRICLENS_SAMPLE_LIMIT", "48"))
+KEEP_JOBS = int(os.environ.get("CRICLENS_KEEP_JOBS", "40"))
 MAX_UPLOAD = 150 * 1024 * 1024
 VIDEO_EXT = {".mp4", ".mov", ".avi", ".mkv", ".webm", ".m4v"}
 MEDIA_NAME = re.compile(r"^[a-z_]+\.(mp4|jpg)$")
@@ -138,12 +140,30 @@ def discover_samples() -> dict[str, dict]:
 SAMPLES = discover_samples()
 
 
+def prune_jobs():
+    """Drop all but the newest KEEP_JOBS finished jobs, in memory and on disk.
+
+    Every job keeps an overlay video and three keyframes (~400 KB) and a dict entry, and nothing
+    removed either: one smoke-test afternoon left 106 directories and 41 MB behind. Only finished
+    jobs are dropped, so a queued or running one is never pulled out from under the worker.
+    """
+    with jobs_lock:
+        finished = sorted((j for j in jobs.values() if j["status"] in ("done", "error")),
+                          key=lambda j: j["created"], reverse=True)
+        stale = [j["id"] for j in finished[KEEP_JOBS:]]
+        for job_id in stale:
+            jobs.pop(job_id, None)
+    for job_id in stale:  # outside the lock: deleting files should not block the API
+        shutil.rmtree(JOBS_DIR / job_id, ignore_errors=True)
+
+
 def new_job(input_path: Path, name: str, uploaded: bool) -> str:
     job_id = uuid.uuid4().hex[:12]
     with jobs_lock:
         jobs[job_id] = {"id": job_id, "name": name, "input": str(input_path), "uploaded": uploaded,
                         "status": "queued", "stage": "read", "progress": 0.0, "created": time.time()}
     work.put(job_id)
+    prune_jobs()
     return job_id
 
 
@@ -152,6 +172,11 @@ app = FastAPI(title="CricLens")
 
 @app.on_event("startup")
 def startup():
+    # Jobs live in memory, so a restart makes every directory from the previous run unreachable
+    # through the API -- keeping them just accumulates dead overlays until someone notices the disk.
+    for d in JOBS_DIR.iterdir():
+        if d.is_dir():
+            shutil.rmtree(d, ignore_errors=True)
     threading.Thread(target=load_models, daemon=True).start()
     threading.Thread(target=worker, daemon=True).start()
 
