@@ -12,6 +12,7 @@ percentile is clearly apart from the others, and even then framed as relative.
 import os
 import threading
 
+MAX_GENERATE_S = float(os.environ.get("CRICLENS_LLM_MAX_SECONDS", "45"))
 FRONT_FOOT = {"drive", "defence", "flick_glance", "lofted", "sweep", "scoop"}
 ATTACKING = {"drive", "cut", "pull_hook", "lofted", "flick_glance", "sweep", "scoop"}
 PART_NAMES = {"head": "head position", "shoulder": "shoulder alignment", "hands": "hands and bat path",
@@ -152,9 +153,14 @@ class Coach:
             return
         try:
             status("Loading coaching language model")
+            import torch
             from transformers import AutoModelForCausalLM, AutoTokenizer
+            # Default float32 weights are 4 bytes a parameter: ~6 GB for a 1.5B model, which swaps on an
+            # 8 GB laptop and turned one paragraph of feedback into a 10-minute wait. bfloat16 halves that,
+            # and Apple's GPU shares the same memory, so it costs nothing extra to use it.
+            self.device = "mps" if torch.backends.mps.is_available() else "cpu"
             self.tok = AutoTokenizer.from_pretrained(self.model_id)
-            self.llm = AutoModelForCausalLM.from_pretrained(self.model_id).eval()
+            self.llm = AutoModelForCausalLM.from_pretrained(self.model_id, dtype=torch.bfloat16).eval().to(self.device)
         except Exception as e:  # the app still works on template text
             print(f"coach: LLM unavailable ({e}); using template feedback", flush=True)
             self.tok = self.llm = None
@@ -184,8 +190,11 @@ class Coach:
             import torch
             with self.lock, torch.no_grad():
                 enc = self.tok.apply_chat_template(messages, add_generation_prompt=True, return_tensors="pt",
-                                                   return_dict=True)
-                out = self.llm.generate(**enc, max_new_tokens=220, do_sample=False, repetition_penalty=1.05)
+                                                   return_dict=True).to(self.device)
+                # max_time caps the stage instead of letting a slow machine hang the whole job queue:
+                # whatever has been generated is returned, and short output falls through to the template.
+                out = self.llm.generate(**enc, max_new_tokens=220, do_sample=False, repetition_penalty=1.05,
+                                        max_time=MAX_GENERATE_S)
                 text = self.tok.decode(out[0, enc["input_ids"].shape[1]:], skip_special_tokens=True).strip()
             if len(text) > 40:
                 return {**base, "text": text, "source": self.name}
