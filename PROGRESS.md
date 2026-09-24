@@ -82,21 +82,55 @@ Details: `docs/iva/iva_results.md`; syllabus mapping: `docs/iva/syllabus_alignme
      weak body part, so the app never once made a part-specific claim the data cannot support.
    - The app's live pitch calibration agrees with the D4 batch results on 42/47 clips, so what users see
      is the same measurement the write-up characterises.
-6. **Open: the batter finder is sometimes confidently wrong.** On an amittalmale drive it put the skeleton
-   on a fielder in the foreground at finder_p 0.902 -- above the 0.9 bar, so nothing warned. No threshold
-   fixes this (0.90-0.99 scores 74%, 0.99+ scores 71%); it needs a feature that knows where the striker
-   must be. The stumps clue was dropped in #6 because far stumps are too small at 480p, but D4 now detects
-   creases on a fifth of clips, which is a stronger geometric prior than the stumps ever were.
+6. **Open, and the next thing to fix: the batter finder only ever learned one broadcast style.**
+   `models/train_batter_finder.py` trains on `kaggle/chunks/pose-cv-c*` alone -- CricketVision -- and the
+   result is applied to all six sources. CricketVision frames the striker close and large, so the finder
+   leans on size; on an amittalmale drive, where the striker is far and a fielder stands near the camera,
+   it picked the fielder at finder_p 0.902 (above the 0.9 bar, so nothing warned). No threshold fixes it:
+   0.90-0.99 scores 74% and 0.99+ scores 71%. It is a domain shift, not a calibration problem.
+   The labels to fix it already exist: `kaggle/pose-rest-audit/verdicts.csv` holds 400 hand-checked clips
+   from the five non-CricketVision sources, 30 of them wrong, and the errors are named --
+   **keeper 23, track switch 2, slip fielder 2, other person 2, no batter 1**. So the dominant confusion
+   is the wicketkeeper, and the fielder case we hit is the rarer one. Retraining across sources is
+   cheap and sits upstream of everything: a wrong batter poisons pose, contact, shot and score together.
+   Tried and rejected: `segment_pitch()` from D4 as a geometric prior -- it segments the whole playing
+   surface, not the pitch strip, so it does not separate a fielder on grass from the striker.
 7. **Open: normalised-time resampling erases duration.** `models/resample_sequences.py` stretches every
    window to 32 frames, so a 0.1s window (the observed minimum) and a full 1.4s swing reach the model as
    the same shape. Worth reporting as a limitation, and feeding duration back in as a feature is a
    cheap, honest novelty candidate for the paper.
-8. **Open: clips cannot be re-cut with more context.** The published sources *are* the short clips --
-   amittalmale's raw archive holds the same 1.2s files, `clip_start`/`clip_end` are null, and
-   cricshot10k's median clip is 0.8s. Getting half a second either side of contact means going back to
-   original broadcast footage, which the datasets do not ship. The app instead asks the user for it.
+8. **CricketVision can be re-cut longer; the other five sources cannot.** Those five ship pre-cropped
+   clips -- amittalmale's raw archive holds the same 1.2s files, `clip_start`/`clip_end` are null, and
+   cricshot10k's median clip is 0.8s -- so their follow-through is simply not recorded anywhere.
+   CricketVision is different: all 8,441 clips carry `clip_start`/`clip_end` against 202 source videos,
+   and `datasets/cricketvision.py` streams those videos from Dropbox (`VIDEOS_URL`), cuts, then deletes
+   them. `PAD = 0.3` is the context kept either side of buildup/follow-through; raising the trailing pad
+   to ~1.2s takes the median clip from 1.99s to ~2.9s, which is the "1-1.3s past follow-through" worth
+   having. These are also **the only clips with technique scores**, so they are the subset that matters.
+   Cost: re-stream and re-cut, re-run pose on Kaggle, rebuild `pose_index.parquet`. This gates step 7 --
+   duration-awareness cannot be demonstrated on clips that never contained a follow-through.
 9. Later: TrackNet ball tracking, 3D pose lifting for camera angles (PoseC3D found this hurts on FineGym --
    verify before investing here).
+
+## Paper: where the novelty stands (2026-09-24)
+
+The supervisor's brief is: survey the field, reproduce the existing pipeline as a baseline, add a
+novelty, and show the novelty beats the baseline. Against that, what we hold today:
+
+- **A methodological result, already evidenced.** I3D-AE-LSTM (WACV 2025) -- the direct competitor,
+  and the source of the CricketVision dataset -- reports *part-wise* action quality assessment on these
+  exact labels. Our finding (#17, #18) is that those five part scores are one signal: PC1 97.5% of
+  variance, and mean partial-Spearman-vs-overall 0.032 +/- 0.010 across three seeds. The app run (#22)
+  showed it holds at inference too -- over 48 clips the five predicted part percentiles never spread
+  the 15 points that would justify naming a weak body part. Proposing partial correlation against the
+  overall score as the reporting protocol for part-wise AQA is a contribution in its own right.
+- **The improvement to measure.** Every AQA pipeline in the survey resamples to a fixed length over
+  normalised time, ours included, which erases duration: a 0.1s window and a full 1.4s swing reach the
+  model as the same 32 frames. A duration-aware or contact-anchored representation is the obvious
+  candidate for "ours beats the baseline", and it needs the longer CricketVision clips (step 8).
+- **Supporting dataset-integrity material.** 1,612 verified duplicates removed, CricketVision shipping
+  1,156 strokes duplicated across annotator folders, and CricShot10's *published* split leaking 75
+  duplicate clusters across its own train/val/test.
 
 ## Open decisions
 - Practice/nets/shadow-batting videos (no bowler or ball) are parked; focus is match clips for now.
