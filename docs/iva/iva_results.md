@@ -90,6 +90,24 @@ coaching-report add-on (stride/swing numbers alongside the technique score) for 
 calibrates, and as validated ground truth if a future pass tries to estimate these from pose alone on the
 other 80%. Output: `data/processed/iva/pitch_calibration.parquet`.
 
+## D5 - bat segmentation U-Net: trains well, does not transfer to real footage
+`kaggle/bat-seg/bat_seg.py`: ResNet18-encoder U-Net on `data/processed/detection/seg/`'s 5,999
+polygon-labelled bat images. **Test IoU 0.81, Dice 0.83** (572 held-out test images) -- a strong number,
+but on the SAME distribution as training: most of `seg/`'s images (Roboflow `powerinflow` etc.) are
+clean product/equipment photography (a bat on its own against a plain background), not match footage.
+
+**Checked against our own clips before trusting it (CLAUDE.md's rule): it fails completely.** Ran the
+trained model on 9 real clip frames (including one cropped tightly around a clearly-visible bat, using
+the batter box we already have from pose extraction) -- max predicted probability 0.04-0.10 across all 9,
+nowhere near the 0.5 threshold, i.e. the model finds no bat at all even when one is plainly in frame.
+This is a genuine domain gap (motion blur, 480p compression, players' bodies partially occluding the bat,
+natural lighting -- none of which the mostly-clean training images represent), not a scale/cropping
+issue. **Bat angle from shape moments is implemented and correct on the training distribution (verified
+on real bat photos), but the segmentation model behind it is not yet usable on the project's actual
+clips.** Needs either real-footage bat annotations or heavy domain-randomisation augmentation
+(motion blur, JPEG/H.264 compression, synthetic occlusion) before it can feed the coaching pipeline --
+not attempted yet, flagged as the next step in PROGRESS.md rather than silently shipped as "done".
+
 ## Decisions for the pipeline
 1. Pose: no image enhancement; switch crop padding from clamp to zero padding; re-run pose on the 4,461 edge clips (boxes reused).
 2. Bat detection: CLAHE on luminance first.
