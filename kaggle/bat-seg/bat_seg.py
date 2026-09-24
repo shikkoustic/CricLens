@@ -34,7 +34,11 @@ SEG_ROOT = glob.glob("/kaggle/input/**/seg/images/train", recursive=True)[0].rsp
 def list_split(split):
     imgs = sorted(glob.glob(f"{SEG_ROOT}/images/{split}/*"))
     if LIMIT:
-        imgs = imgs[:LIMIT]
+        # shuffle before truncating for a smoke test: the sources are alphabetically clustered (e.g.
+        # cricket-ball-segmentation sorts first and is ball-only close-ups, no bat at all), so a plain
+        # head-slice can accidentally sample a batch with zero bat ground truth
+        rng = np.random.RandomState(0)
+        imgs = list(rng.choice(imgs, size=min(LIMIT, len(imgs)), replace=False))
     return imgs
 
 
