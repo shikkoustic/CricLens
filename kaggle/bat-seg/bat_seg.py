@@ -156,9 +156,12 @@ def run(epochs: int, batch_size: int = 16, patience: int = 8) -> dict:
     test_iou, test_dice = evaluate(dl_te)
     torch.save(best_state, f"{OUT}/unet_best.pt")
 
-    # bat-angle sample + overlay QA on a handful of test images
+    # bat-angle sample + overlay QA on a handful of test images -- shuffle first (same reason as
+    # list_split's LIMIT branch: te is alphabetically sorted, and cricket-ball-segmentation sorts first
+    # and is ball-only, so an unshuffled head-slice silently samples zero bat images)
     model.eval(); angles = []
-    for i, p in enumerate(te[:24]):
+    qa_sample = list(np.random.RandomState(0).choice(te, size=min(24, len(te)), replace=False))
+    for i, p in enumerate(qa_sample):
         img = cv2.imread(p); h, w = img.shape[:2]
         x = SegDataset([p])[0][0].unsqueeze(0).to(DEV)
         with torch.no_grad():
