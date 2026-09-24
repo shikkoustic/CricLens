@@ -58,6 +58,13 @@ def run_one(base, sample):
         calibrated=m["calibrated"], technique=round(t["overall"], 2),
         warnings=r["warnings"], coach_source=r["coach"]["source"],
     )
+    # docs/paper/finding_label_collinearity.md found no part-specific signal beyond overall quality,
+    # so track how far apart the five part percentiles land: app/coach.py names a "relative weak spot"
+    # once they differ by 15 points, and that claim is only as sound as the spread is real.
+    pcts = [p["pct"] for p in t["parts"] if p["pct"] is not None]
+    if pcts:
+        row["part_spread"] = round(max(pcts) - min(pcts), 1)
+        row["weak_spot_named"] = row["part_spread"] >= 15
     return row
 
 
@@ -133,6 +140,13 @@ def main():
     print(f"\ncalibrated (stride/swing): {sum(r['calibrated'] for r in done)}/{len(done)}")
     print(f"median runtime {statistics.median(r['secs'] for r in done):.1f}s")
     print(f"predicted-label spread: {dict(Counter(r['pred'] for r in done))}")
+
+    named = [r for r in done if r.get("weak_spot_named")]
+    spreads = [r["part_spread"] for r in done if "part_spread" in r]
+    if spreads:
+        print(f"\nbody-part percentile spread: median {statistics.median(spreads):.1f}, max {max(spreads):.1f}")
+        print(f"    clips told a specific body part is their weak spot: {len(named)}/{len(done)}"
+              f" = {len(named)/len(done):.0%}")
     print(f"\nrows -> {out}")
 
 
