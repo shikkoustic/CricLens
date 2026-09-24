@@ -24,6 +24,7 @@ requests==2.34.2
 fastapi==0.141.1
 uvicorn==0.53.0
 python-multipart==0.0.32
+pydantic==2.13.5  # imported directly by app/server.py, not just via fastapi
 torch==2.14.0
 torchvision==0.29.0
 ultralytics==8.4.161
