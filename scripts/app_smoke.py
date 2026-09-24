@@ -22,7 +22,7 @@ from collections import Counter
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-OUT = ROOT / "app/runtime/smoke.json"
+RUNS = ROOT / "app/runtime/smoke"
 FOLLOW_THROUGH_S = 0.6  # the window the models were trained on: contact -0.8s to +0.6s
 FINDER_MIN = 0.9  # train_ready used this confidence floor for "this really is the striker"
 
@@ -65,7 +65,11 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("-n", type=int, default=0, help="only the first N samples")
     ap.add_argument("--base", default="http://127.0.0.1:8000")
+    ap.add_argument("--out", help="where to write the rows (default: a timestamped file per run)")
     a = ap.parse_args()
+    # One file per run: comparing a run against the previous one is the whole point of having this,
+    # and a fixed filename silently destroys the baseline you were about to compare against.
+    out = Path(a.out) if a.out else RUNS / f"{time.strftime('%Y%m%d-%H%M%S')}.json"
 
     try:
         health = api(a.base, "/api/health")
@@ -97,8 +101,8 @@ def main():
         print(f"[{i:>3}/{len(samples)}] {ok} {row['source']:<14} truth={str(row.get('truth')):<12} "
               f"pred={str(row.get('pred')):<12} p={row.get('p')} finder_p={row.get('finder_p')} "
               f"after_contact={row.get('after_contact_s')}s {row['secs']}s", flush=True)
-        OUT.parent.mkdir(parents=True, exist_ok=True)
-        OUT.write_text(json.dumps(rows, indent=1))
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(json.dumps(rows, indent=1))
 
     done = [r for r in rows if r["status"] == "done"]
     errs = [r for r in rows if r["status"] != "done"]
@@ -129,7 +133,7 @@ def main():
     print(f"\ncalibrated (stride/swing): {sum(r['calibrated'] for r in done)}/{len(done)}")
     print(f"median runtime {statistics.median(r['secs'] for r in done):.1f}s")
     print(f"predicted-label spread: {dict(Counter(r['pred'] for r in done))}")
-    print(f"\nrows -> {OUT}")
+    print(f"\nrows -> {out}")
 
 
 if __name__ == "__main__":
