@@ -27,6 +27,16 @@ from models.train_shot_classifier import make_model, normalise  # noqa: E402
 from models.train_technique_scorer import VAERegressor  # noqa: E402
 
 PRE, FOLLOW, PAD, GAP = 0.8, 0.6, 0.12, 3
+# The striker pick is only as trustworthy as the finder's confidence. models/pose_index.py used
+# finder_p >= 0.9 to decide a clip was safe to train on, so anything below that deserves the same
+# doubt when we show it to a user, not just the near-coin-flip cases.
+FINDER_SURE = 0.9
+# Contact landing at the very end of the clip means the follow-through happened after the recording
+# stopped, so the swing was judged on the backswing alone. Measured on the 48 sample clips
+# (scripts/app_smoke.py): contact in the last 20% of the clip scored 1/3, against 15/19 for contact
+# in the middle. Window *length* on its own predicts little (65% / 62% / 73% / 75% across
+# 0.5-0.8 / 0.8-1.1 / 1.1-1.4 / 1.4s+), so short windows alone are not worth warning about.
+LATE_CONTACT_FRAC = 0.85
 TARGET_H = 480
 MAX_SECONDS = float(os.environ.get("CRICLENS_MAX_SECONDS", "10"))
 SHOTS = ["cut", "defence", "drive", "flick_glance", "lofted", "pull_hook", "scoop", "sweep"]
@@ -281,8 +291,13 @@ class Analyzer:
         if found < 0.8 or conf < 0.5:
             warnings.append("The batter was only partly visible or tracked with low confidence around the shot, "
                             "so the results below are less reliable than usual.")
-        if finder_p < 0.5:
-            warnings.append("The app wasn't fully sure which player is the batter -- check the highlighted player in the video.")
+        if finder_p < FINDER_SURE:
+            warnings.append("The app wasn't fully sure which player is the batter -- check the highlighted player in the "
+                            "video. The non-striker and the wicketkeeper are the usual mix-ups.")
+        if contact >= LATE_CONTACT_FRAC * (n - 1):
+            warnings.append("The bat meets the ball right at the end of this clip, so the follow-through was never "
+                            "recorded and the shot was judged on the backswing alone. Clips that keep about half a "
+                            "second either side of contact are read far more reliably.")
 
         progress("shot", 0.68)
         rs = resample_clip(k, np.array([lo, contact, hi]), fps)
