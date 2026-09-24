@@ -1,7 +1,8 @@
 # CricLens progress (resume point)
 
-Last updated: 2026-09-23. Preprocessing, IVA experiments, and phase-3 model training (with a proper
-seed-controlled variance sweep) are done; loss-weight tuning is next.
+Last updated: 2026-09-24. Preprocessing, IVA experiments and phase-3 model training are done. The web
+app now runs end to end on a laptop and has been measured on 48 test clips (#22); the open work is the
+batter finder's confident wrong picks and the bat U-Net domain gap.
 
 ## How Kaggle work runs
 Kaggle jobs run on Kaggle's servers and keep going when the laptop sleeps. Long jobs are split into
@@ -35,6 +36,7 @@ account; runners retry every 5 min when both are busy. Resume = re-run the runne
 | 19 | Technique scorer loss-weight tuning (3x3 grid, `models/tune_technique_scorer_driver.sh`) | untuned defaults were the worst combo in the grid; new default kl_weight=0.001/reg_weight=10.0 gives mean Spearman 0.603+/-0.010 (up from 0.592+/-0.023) -- modest gain, ~half the run-to-run variance |
 | 20 | IVA D4: pitch calibration (HSV + morphology + connected components + Hough crease lines, stumps fallback), full 22,420 clips (Kaggle CPU) | **20.0% of clips calibrated** (3,028 crease, 1,450 stumps-fallback); median stride 174.7cm, median swing 14.5 m/s; yield ranges 3.5% (ipl2023, tiny crease at 480p) to 38.2% (cricketvision); `data/processed/iva/pitch_calibration.parquet` |
 | 21 | IVA D5: bat segmentation U-Net + bat angle from shape moments | test IoU 0.81 on its own (mostly product-photo) test set, but **fails completely on our real clips** (max confidence 0.04-0.10 on 9 real frames, incl. one cropped around a clearly-visible bat) -- genuine domain gap, not usable yet; needs real-footage training data or heavy augmentation |
+| 22 | Web app end to end on a laptop (`app/`), measured with `scripts/app_smoke.py` on 48 test clips (6 per shot, all 6 sources) | **48/48 analysed, 0 failures, shot accuracy 36/48 = 75.0%** -- in line with the LSTM's 78.0% test accuracy, so the serving path reproduces the trained model. Median 28s a clip with the local LLM, 12s without |
 
 Details: `docs/iva/iva_results.md`; syllabus mapping: `docs/iva/syllabus_alignment.md`.
 
@@ -67,8 +69,34 @@ Details: `docs/iva/iva_results.md`; syllabus mapping: `docs/iva/syllabus_alignme
    bat labels (a small hand-labelled sample from our own clips) or heavy augmentation (motion blur,
    compression, occlusion) before it's usable. Decide whether that's worth the effort vs. relying on the
    existing YOLO box detector (mAP50 0.81, already works) without pixel-level angle.
-5. Later: TrackNet ball tracking, 3D pose lifting for camera angles (PoseC3D found this hurts on FineGym --
-   verify before investing here), coaching LLM, web app.
+5. **Web app runs end to end** (2026-09-24, #22 above). `bash scripts/setup_app.sh` then
+   `python -m app.server`. Upload a clip or pick a sample: overlay video, shot with its probabilities,
+   technique dial and part bars, stride/swing where calibration works, and coaching text written by a
+   local Qwen2.5-1.5B (template fallback if it is unavailable). Re-measure any change with
+   `python scripts/app_smoke.py`. What the 48-clip run established, beyond the headline 75.0%:
+   - **The reliability warnings carry real information.** They fire on 15/48 clips and cover 7 of the 12
+     wrong shot calls; clips that stay silent are right 28/33 = 85%, against 75% overall. The batter
+     finder's own confidence drives most of this: below 0.9 it is right 3/8, at or above it 33/40.
+   - **The collinearity finding holds at serving time.** Across 48 clips the five body-part percentiles
+     spread by a median of 4 points and never by the 15 that would make `app/coach.py` name a specific
+     weak body part, so the app never once made a part-specific claim the data cannot support.
+   - The app's live pitch calibration agrees with the D4 batch results on 42/47 clips, so what users see
+     is the same measurement the write-up characterises.
+6. **Open: the batter finder is sometimes confidently wrong.** On an amittalmale drive it put the skeleton
+   on a fielder in the foreground at finder_p 0.902 -- above the 0.9 bar, so nothing warned. No threshold
+   fixes this (0.90-0.99 scores 74%, 0.99+ scores 71%); it needs a feature that knows where the striker
+   must be. The stumps clue was dropped in #6 because far stumps are too small at 480p, but D4 now detects
+   creases on a fifth of clips, which is a stronger geometric prior than the stumps ever were.
+7. **Open: normalised-time resampling erases duration.** `models/resample_sequences.py` stretches every
+   window to 32 frames, so a 0.1s window (the observed minimum) and a full 1.4s swing reach the model as
+   the same shape. Worth reporting as a limitation, and feeding duration back in as a feature is a
+   cheap, honest novelty candidate for the paper.
+8. **Open: clips cannot be re-cut with more context.** The published sources *are* the short clips --
+   amittalmale's raw archive holds the same 1.2s files, `clip_start`/`clip_end` are null, and
+   cricshot10k's median clip is 0.8s. Getting half a second either side of contact means going back to
+   original broadcast footage, which the datasets do not ship. The app instead asks the user for it.
+9. Later: TrackNet ball tracking, 3D pose lifting for camera angles (PoseC3D found this hurts on FineGym --
+   verify before investing here).
 
 ## Open decisions
 - Practice/nets/shadow-batting videos (no bowler or ball) are parked; focus is match clips for now.
