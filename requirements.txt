@@ -18,3 +18,14 @@ rarfile==4.5
 tqdm==4.70.0
 pyyaml==6.0.3
 requests==2.34.2
+
+# Web app (app/): inference pipeline, coaching model and the FastAPI server.
+# Needed to run `python -m app.server`; the data prep scripts above do not use these.
+fastapi==0.141.1
+uvicorn==0.53.0
+python-multipart==0.0.32
+torch==2.14.0
+torchvision==0.29.0
+ultralytics==8.4.161
+transformers==5.17.0
+imageio-ffmpeg==0.6.0

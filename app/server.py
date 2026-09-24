@@ -12,6 +12,7 @@ import threading
 import time
 import traceback
 import uuid
+from itertools import zip_longest
 from pathlib import Path
 
 import cv2
@@ -26,6 +27,7 @@ ROOT = APP.parent
 RUNTIME = APP / "runtime"
 JOBS_DIR, THUMBS = RUNTIME / "jobs", RUNTIME / "thumbs"
 SAMPLES_DIR = Path(os.environ.get("CRICLENS_SAMPLES_DIR", ROOT / "data/interim/clips"))
+SAMPLE_LIMIT = int(os.environ.get("CRICLENS_SAMPLE_LIMIT", "48"))
 MAX_UPLOAD = 150 * 1024 * 1024
 VIDEO_EXT = {".mp4", ".mov", ".avi", ".mkv", ".webm", ".m4v"}
 MEDIA_NAME = re.compile(r"^[a-z_]+\.(mp4|jpg)$")
@@ -88,15 +90,43 @@ def worker():
 
 
 def discover_samples() -> dict[str, dict]:
-    labels = {}
+    """Test-split clips to offer in the UI, spread across shots and sources.
+
+    The clips directory holds all 22k+ clips, so it is neither honest (most are training
+    clips the models have seen) nor usable (one alphabetical source fills the whole panel)
+    to offer the lot. Take test-split clips only and round-robin by shot, then by source,
+    so the panel shows every shot type. Deterministic: same list on every start.
+    """
+    meta = {}
     mf = ROOT / "data/processed/manifest.parquet"
     if mf.exists():
-        m = pd.read_parquet(mf, columns=["clip_id", "shot"])
-        labels = dict(zip(m.clip_id, m.shot))
-    out = {}
+        m = pd.read_parquet(mf, columns=["clip_id", "shot", "split"])
+        meta = {r.clip_id: (r.shot, r.split) for r in m.itertuples()}
+
+    by_shot: dict[str, list[Path]] = {}
     for p in sorted(SAMPLES_DIR.glob("*/*.mp4")):
-        sid = f"{p.parent.name}--{p.stem}"
-        out[sid] = {"id": sid, "path": p, "source": p.parent.name, "label": labels.get(p.stem)}
+        shot, split = meta.get(p.stem, (None, None))
+        if meta and split != "test":
+            continue
+        by_shot.setdefault(shot or "other", []).append(p)
+
+    # Within a shot, interleave sources so one source cannot fill that shot's quota either.
+    for shot, paths in by_shot.items():
+        by_source: dict[str, list[Path]] = {}
+        for p in paths:
+            by_source.setdefault(p.parent.name, []).append(p)
+        by_shot[shot] = [p for row in zip_longest(*by_source.values()) for p in row if p]
+
+    out = {}
+    for row in zip_longest(*(by_shot[s] for s in sorted(by_shot))):
+        for p in row:
+            if p is None:
+                continue
+            sid = f"{p.parent.name}--{p.stem}"
+            shot, _ = meta.get(p.stem, (None, None))
+            out[sid] = {"id": sid, "path": p, "source": p.parent.name, "label": shot}
+            if len(out) >= SAMPLE_LIMIT:
+                return out
     return out
 
 
