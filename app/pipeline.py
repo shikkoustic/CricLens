@@ -21,6 +21,7 @@ import torch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+from app.shots import SHOTS  # noqa: E402
 from models.pitch_calibration import calibrate_clip, measure_stride_and_swing  # noqa: E402
 from models.resample_sequences import resample_clip  # noqa: E402
 from models.train_shot_classifier import make_model, normalise  # noqa: E402
@@ -39,7 +40,6 @@ FINDER_SURE = 0.9
 LATE_CONTACT_FRAC = 0.85
 TARGET_H = 480
 MAX_SECONDS = float(os.environ.get("CRICLENS_MAX_SECONDS", "10"))
-SHOTS = ["cut", "defence", "drive", "flick_glance", "lofted", "pull_hook", "scoop", "sweep"]
 SHOT_NAMES = {"cut": "Cut", "defence": "Defence", "drive": "Drive", "flick_glance": "Flick / Glance",
               "lofted": "Lofted shot", "pull_hook": "Pull / Hook", "scoop": "Scoop", "sweep": "Sweep"}
 PARTS = ["head", "shoulder", "hands", "hips", "feet"]

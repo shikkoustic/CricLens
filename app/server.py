@@ -22,6 +22,8 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from app.shots import SHOTS
+
 APP = Path(__file__).resolve().parent
 ROOT = APP.parent
 RUNTIME = APP / "runtime"
@@ -96,6 +98,9 @@ def discover_samples() -> dict[str, dict]:
     clips the models have seen) nor usable (one alphabetical source fills the whole panel)
     to offer the lot. Take test-split clips only and round-robin by shot, then by source,
     so the panel shows every shot type. Deterministic: same list on every start.
+
+    Clips labelled "other" are left out: the classifier is trained on the eight named shots and
+    has no "other" output, so offering one guarantees a wrong answer that tells nobody anything.
     """
     meta = {}
     mf = ROOT / "data/processed/manifest.parquet"
@@ -106,7 +111,7 @@ def discover_samples() -> dict[str, dict]:
     by_shot: dict[str, list[Path]] = {}
     for p in sorted(SAMPLES_DIR.glob("*/*.mp4")):
         shot, split = meta.get(p.stem, (None, None))
-        if meta and split != "test":
+        if meta and (split != "test" or shot not in SHOTS):
             continue
         by_shot.setdefault(shot or "other", []).append(p)
 
