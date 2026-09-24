@@ -19,3 +19,6 @@ models/technique_scorer/
 models/tune_sweep/
 models/tune_confirm/
 app/runtime/
+
+# Locally downloaded coaching LLM weights (fetched on demand, ~3 GB)
+models/qwen2.5-*/
