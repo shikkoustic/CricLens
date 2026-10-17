@@ -299,5 +299,19 @@ best setup on every metric. For the paper, this means the honest attribution is 
 reformulation that generalises across architectures, with contrastive regression against exemplars as
 a complementary, independently-useful second improvement" rather than crediting either alone.
 
+### Update 2026-10-17 (last one): combined-metric selection tried, didn't beat the best seed
+
+Tested the refinement flagged above: `--select-metric combined` (early-stops on mean_spearman +
+partial-rho instead of mean_spearman alone), same hyperparameters as the winning residual-targets
+config. Result: mean Spearman 0.569, R-l2 2.64, partial-rho 0.133 -- worse on Spearman and R-l2 than
+every one of the 3 plain-Spearman-selection seeds, and not even the best partial-rho (seed 2's
+0.137 is higher, with better Spearman and R-l2 too). **Honest negative result**: explicitly selecting
+for the combined metric traded away more Spearman than it gained in partial-rho, and didn't land
+anywhere seed 2 hadn't already reached by chance. The best checkpoint found across everything tried so
+far remains **seed 2, plain Spearman selection**: mean Spearman 0.595, R-l2 2.51, partial-rho 0.137,
+saved at `models/technique_scorer_contrastive_residual_seed2/contrastive_scorer.pt`. Leaving
+`--select-metric combined` in the script since it's a reasonable thing to try with more seeds/budget,
+but it is not the current best config.
+
 ## Open decisions
 - Practice/nets/shadow-batting videos (no bowler or ball) are parked; focus is match clips for now.
