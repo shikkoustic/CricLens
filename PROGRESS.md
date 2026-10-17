@@ -193,5 +193,28 @@ deviation. `score_overall` stays a separate, absolute target. If this still does
 independently-moving part predictions, that itself is worth reporting as a dataset-level limitation,
 not an architecture one.
 
+### Update 2026-10-17 (later still): hyperparameter sweep -- confirms it's not a tuning problem
+
+`models/sweep_contrastive.py` ran 4 configs (lower lr, higher patience, hidden 64/128/256) against the
+VAE baseline, since the first contrastive run's val curve was still falling at early-stop:
+
+| config | lr | hidden | spearman | R-l2 | partial-rho |
+|---|---|---|---|---|---|
+| VAE baseline | - | - | 0.601 | 2.47 | 0.019 |
+| lr3e4_p15 | 3e-4 | 128 | 0.573 | 2.63 | 0.075 |
+| lr3e4_h256_p15 | 3e-4 | 256 | 0.554 | 2.67 | 0.067 |
+| lr1e4_p20 | 1e-4 | 128 | 0.556 | 2.75 | **0.089** |
+| lr3e4_h64_p15 | 3e-4 | 64 | 0.551 | 2.71 | 0.062 |
+
+None of the 4 beat the baseline on raw Spearman or R-l2 (all landed 0.55-0.57 vs 0.601). Every config
+beat it 3-4x on partial-rho vs overall, consistently, regardless of lr/hidden size -- that is not a
+tuning artefact, it is the diff-based training objective itself surfacing more part-specific signal
+than absolute regression does, even before the residual-target fix above is tried. Conclusion: more
+hyperparameter search on the *absolute*-target objective is not going to close the raw-metric gap --
+`--residual-targets` (just implemented, `models/train_technique_scorer_contrastive.py`) is the more
+promising next lever, since it attacks the actual mechanism (shared-factor collapse) rather than
+tuning around it. Best raw-Spearman config so far (lr3e4_p15) is the baseline hyperparameters for that
+run.
+
 ## Open decisions
 - Practice/nets/shadow-batting videos (no bowler or ball) are parked; focus is match clips for now.
