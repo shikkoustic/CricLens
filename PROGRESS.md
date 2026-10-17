@@ -326,11 +326,22 @@ exemplars (`kaggle/exemplars.csv`, the original set) remains the better choice; 
 stays in the script for anyone who wants to try a different selection (e.g. re-ranking by a different
 quality criterion) rather than just more of the same-ranked candidates.
 
+Also tried, cheaply (no retraining -- reuses the seed-2 checkpoint, post-hoc re-weighting only):
+embedding-distance-weighted exemplar averaging instead of a plain mean (closer exemplar in embedding
+space gets more weight, the inference-time version of the attention-weighted aggregation CoRe/MCoRe use,
+docs/paper/dossier.md B10). Result: 0.593/2.53/0.138, statistically indistinguishable from plain
+averaging's 0.595/2.51/0.137. Same-shot, quality-filtered exemplars are apparently similar enough in
+embedding space that distance carries little differentiating signal -- a properly *trained* attention
+head (grouped-batch training with a loss on the aggregated prediction, not per-pair diffs) might still
+help, but is a bigger change than this round's budget covered; worth flagging as a follow-up rather than
+doing speculatively.
+
 **Round summary for review**: implementation, hyperparameter sweep, residual-target reformulation (the
-real win), a clean architecture-isolating ablation, and two follow-up refinements that honestly didn't
-help (combined selection, more exemplars) are all done and documented above. The best result stands at
-seed 2 / plain-Spearman selection / 50 exemplars / residual targets: mean Spearman 0.595, R-l2 2.51,
-partial-rho 0.137 (vs VAE baseline's 0.601, 2.47, 0.019).
+real win), a clean architecture-isolating ablation, and three follow-up refinements that honestly didn't
+help (combined selection, more exemplars, distance-weighted averaging) are all done and documented
+above. The best result stands at seed 2 / plain-Spearman selection / 50 exemplars / residual targets /
+plain averaging: mean Spearman 0.595, R-l2 2.51, partial-rho 0.137 (vs VAE baseline's 0.601, 2.47,
+0.019).
 
 ## Open decisions
 - Practice/nets/shadow-batting videos (no bowler or ball) are parked; focus is match clips for now.
