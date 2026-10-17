@@ -40,6 +40,25 @@ EXEMPLARS = ROOT / "kaggle/exemplars.csv"
 OUT_DIR = ROOT / "models/technique_scorer_contrastive"
 
 
+def to_residual(y: np.ndarray) -> np.ndarray:
+    """y: (..., 6) = [5 parts, overall]. Replace each part with (part - overall); overall unchanged.
+    Removes the shared quality factor from the part targets by construction, so the model can't
+    satisfy an MSE loss on them by just reproducing "overall" -- see PROGRESS.md 2026-10-17: trained
+    on absolute part scores, both the VAE baseline and the first contrastive run ended up predicting
+    the 5 parts MORE collinear with each other (PC1 99.7-100%) than the labels themselves (97.9%)."""
+    out = y.copy()
+    out[..., :5] -= y[..., 5:6]
+    return out
+
+
+def from_residual(y: np.ndarray) -> np.ndarray:
+    """Inverse of to_residual. Linear, so it commutes with averaging across exemplars -- callers can
+    average in residual space and invert once, or invert per-exemplar first; both give the same result."""
+    out = y.copy()
+    out[..., :5] += y[..., 5:6]
+    return out
+
+
 def load_data(limit: int | None = None) -> tuple[pd.DataFrame, pd.DataFrame]:
     idx = pd.read_parquet(ROOT / "data/processed/pose_index.parquet")
     seq = pd.read_parquet(ROOT / "data/processed/sequences.parquet")
@@ -65,14 +84,15 @@ class PairDataset(Dataset):
     for stable training (same reasoning as the VAE baseline standardising absolute scores)."""
 
     def __init__(self, df: pd.DataFrame, exemplars: pd.DataFrame, cache: dict[str, np.ndarray],
-                 diff_mu: np.ndarray, diff_sd: np.ndarray):
+                 diff_mu: np.ndarray, diff_sd: np.ndarray, residual_targets: bool = False):
         score_cols = [f"score_{p}" for p in TARGETS]
         ex_by_shot = {s: g for s, g in exemplars.groupby("shot")}
-        self.pairs = []  # (query clip_id, exemplar clip_id, query_scores, exemplar_scores)
+        xf = to_residual if residual_targets else (lambda y: y)
+        self.pairs = []  # (query clip_id, exemplar clip_id, query_scores, exemplar_scores) -- xf'd
         for r in df.itertuples():
-            qy = np.array([getattr(r, c) for c in score_cols], np.float32)
+            qy = xf(np.array([getattr(r, c) for c in score_cols], np.float32))
             for e in ex_by_shot[r.shot].itertuples():
-                ey = np.array([getattr(e, c) for c in score_cols], np.float32)
+                ey = xf(np.array([getattr(e, c) for c in score_cols], np.float32))
                 self.pairs.append((r.clip_id, e.clip_id, qy, ey))
         self.cache, self.diff_mu, self.diff_sd = cache, diff_mu, diff_sd
 
@@ -106,12 +126,14 @@ class ContrastiveScorer(nn.Module):
 
 def predict_scores(model: ContrastiveScorer, df: pd.DataFrame, exemplars: pd.DataFrame,
                     cache: dict[str, np.ndarray], diff_mu: np.ndarray, diff_sd: np.ndarray,
-                    device: str, batch_size: int = 256) -> np.ndarray:
+                    device: str, batch_size: int = 256, residual_targets: bool = False) -> np.ndarray:
     """Average exemplar_score + predicted_diff across every exemplar of the query's shot type --
-    the CoRe-style robustness step. Returns (n_queries, n_targets)."""
+    the CoRe-style robustness step. Returns (n_queries, n_targets), always in absolute score space
+    (from_residual is applied at the end when residual_targets=True)."""
     model.eval()
     score_cols = [f"score_{p}" for p in TARGETS]
-    ex_by_shot = {s: g[score_cols].to_numpy(np.float32) for s, g in exemplars.groupby("shot")}
+    xf = to_residual if residual_targets else (lambda y: y)
+    ex_by_shot = {s: xf(g[score_cols].to_numpy(np.float32)) for s, g in exemplars.groupby("shot")}
     ex_ids_by_shot = {s: g.clip_id.tolist() for s, g in exemplars.groupby("shot")}
     out = np.zeros((len(df), len(TARGETS)), np.float32)
     with torch.no_grad():
@@ -127,14 +149,14 @@ def predict_scores(model: ContrastiveScorer, df: pd.DataFrame, exemplars: pd.Dat
                 xq_rep = xq.unsqueeze(1).expand(-1, n_ex, -1, -1).reshape(b * n_ex, *xq.shape[1:])
                 xe_rep = xe_all.unsqueeze(0).expand(b, -1, -1, -1).reshape(b * n_ex, *xe_all.shape[1:])
                 diff = model(xq_rep, xe_rep).cpu().numpy().reshape(b, n_ex, -1) * diff_sd + diff_mu
-                pred = ex_scores[None, :, :] + diff  # (B, n_ex, n_targets)
-                out[sub] = pred.mean(axis=1)
-    return out
+                pred = ex_scores[None, :, :] + diff  # (B, n_ex, n_targets), still in xf space
+                out[sub] = pred.mean(axis=1)  # linear xf commutes with averaging
+    return from_residual(out) if residual_targets else out
 
 
 def run(epochs: int, limit: int | None, device: str, batch_size: int = 64, patience: int = 8,
         lr: float = 1e-3, hidden: int = 128, weight_decay: float = 1e-4, seed: int = 0,
-        tag: str = "") -> dict:
+        tag: str = "", residual_targets: bool = False) -> dict:
     torch.manual_seed(seed)
     np.random.seed(seed)
     d, exemplars = load_data(limit)
@@ -150,22 +172,25 @@ def run(epochs: int, limit: int | None, device: str, batch_size: int = 64, patie
 
     score_cols = [f"score_{p}" for p in TARGETS]
     ex_by_shot_df = {s: g for s, g in exemplars.groupby("shot")}
+    xf = to_residual if residual_targets else (lambda y: y)
     diffs = []
     for r in tr.itertuples():
-        qy = np.array([getattr(r, c) for c in score_cols], np.float32)
+        qy = xf(np.array([getattr(r, c) for c in score_cols], np.float32))
         for e in ex_by_shot_df[r.shot].itertuples():
-            ey = np.array([getattr(e, c) for c in score_cols], np.float32)
+            ey = xf(np.array([getattr(e, c) for c in score_cols], np.float32))
             diffs.append(qy - ey)
     diffs = np.stack(diffs)
     diff_mu, diff_sd = diffs.mean(0).astype(np.float32), diffs.std(0).astype(np.float32)
     diff_sd[diff_sd < 1e-3] = 1.0
-    print(f"diff distribution (train pairs): mu={diff_mu.round(2)} sd={diff_sd.round(2)}")
+    print(f"diff distribution (train pairs, residual_targets={residual_targets}): "
+          f"mu={diff_mu.round(2)} sd={diff_sd.round(2)}")
 
     in_dim = next(iter(cache.values())).shape[1]
     model = ContrastiveScorer(in_dim, len(TARGETS), hidden=hidden).to(device)
     opt = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
 
-    dl_tr = DataLoader(PairDataset(tr, exemplars, cache, diff_mu, diff_sd), batch_size=batch_size, shuffle=True)
+    dl_tr = DataLoader(PairDataset(tr, exemplars, cache, diff_mu, diff_sd, residual_targets),
+                        batch_size=batch_size, shuffle=True)
 
     best_rho, best_state, bad = -1.0, None, 0
     for ep in range(epochs):
@@ -177,7 +202,7 @@ def run(epochs: int, limit: int | None, device: str, batch_size: int = 64, patie
             loss = nn.functional.mse_loss(pred, diff)
             loss.backward(); opt.step()
             tot_loss += loss.item() * len(diff)
-        va_pred = predict_scores(model, va.reset_index(drop=True), exemplars, cache, diff_mu, diff_sd, device)
+        va_pred = predict_scores(model, va.reset_index(drop=True), exemplars, cache, diff_mu, diff_sd, device, residual_targets=residual_targets)
         va_df = va.reset_index(drop=True).assign(**{f"pred_{p}": va_pred[:, i] for i, p in enumerate(TARGETS)})
         r = evaluate_rating(va_df, {p: f"score_{p}" for p in PARTS}, {p: f"pred_{p}" for p in PARTS},
                              overall_cols=("score_overall", "pred_overall"))
@@ -192,7 +217,7 @@ def run(epochs: int, limit: int | None, device: str, batch_size: int = 64, patie
 
     model.load_state_dict(best_state)
     te_r = te.reset_index(drop=True)
-    te_pred = predict_scores(model, te_r, exemplars, cache, diff_mu, diff_sd, device)
+    te_pred = predict_scores(model, te_r, exemplars, cache, diff_mu, diff_sd, device, residual_targets=residual_targets)
     te_df = te_r.assign(**{f"pred_{p}": te_pred[:, i] for i, p in enumerate(TARGETS)})
     result = evaluate_rating(te_df, {p: f"score_{p}" for p in PARTS}, {p: f"pred_{p}" for p in PARTS},
                               by="source", overall_cols=("score_overall", "pred_overall"))
@@ -209,7 +234,7 @@ def run(epochs: int, limit: int | None, device: str, batch_size: int = 64, patie
         print(format_report(result_h, "TEST by handedness"))
     print(f"\noverall-score Spearman (test): {overall_spearman:.3f}  (I3D-AE-LSTM baseline: 0.84)")
     summary = {"tag": tag, "lr": lr, "hidden": hidden, "weight_decay": weight_decay, "seed": seed,
-               "patience": patience, "best_epoch_val_mean_spearman": best_rho,
+               "patience": patience, "residual_targets": residual_targets, "best_epoch_val_mean_spearman": best_rho,
                "test_mean_spearman": result["mean_spearman"],
                "test_mean_r_l2": result["mean_r_l2"], "test_mean_partial_spearman_vs_overall": result["mean_partial_spearman_vs_overall"],
                "test_overall_spearman": overall_spearman, "per_part": {p: result["per_part"][p] for p in PARTS},
@@ -230,9 +255,12 @@ def main():
     ap.add_argument("--patience", type=int, default=8)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--tag", default="")
+    ap.add_argument("--residual-targets", action="store_true",
+                     help="train parts on (part - overall) instead of absolute part scores")
     args = ap.parse_args()
     run(args.epochs, args.limit, args.device, args.batch_size, patience=args.patience, lr=args.lr,
-        hidden=args.hidden, weight_decay=args.weight_decay, seed=args.seed, tag=args.tag)
+        hidden=args.hidden, weight_decay=args.weight_decay, seed=args.seed, tag=args.tag,
+        residual_targets=args.residual_targets)
 
 
 if __name__ == "__main__":
