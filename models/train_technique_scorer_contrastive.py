@@ -156,7 +156,7 @@ def predict_scores(model: ContrastiveScorer, df: pd.DataFrame, exemplars: pd.Dat
 
 def run(epochs: int, limit: int | None, device: str, batch_size: int = 64, patience: int = 8,
         lr: float = 1e-3, hidden: int = 128, weight_decay: float = 1e-4, seed: int = 0,
-        tag: str = "", residual_targets: bool = False) -> dict:
+        tag: str = "", residual_targets: bool = False, select_metric: str = "spearman") -> dict:
     torch.manual_seed(seed)
     np.random.seed(seed)
     d, exemplars = load_data(limit)
@@ -192,6 +192,15 @@ def run(epochs: int, limit: int | None, device: str, batch_size: int = 64, patie
     dl_tr = DataLoader(PairDataset(tr, exemplars, cache, diff_mu, diff_sd, residual_targets),
                         batch_size=batch_size, shuffle=True)
 
+    # PROGRESS.md 2026-10-17: with residual targets, partial-rho peaks early (epochs 1-6) and drifts
+    # down as Spearman keeps climbing -- selecting on Spearman alone leaves partial-rho gains on the
+    # table. select_metric="combined" tracks mean_spearman + partial-rho instead, so the checkpoint
+    # saved is the one that's good at both, not just the one furthest along the Spearman curve.
+    def select_score(r: dict) -> float:
+        if select_metric == "combined":
+            return r["mean_spearman"] + r["mean_partial_spearman_vs_overall"]
+        return r["mean_spearman"]
+
     best_rho, best_state, bad = -1.0, None, 0
     for ep in range(epochs):
         model.train(); t0 = time.time(); tot_loss = 0.0
@@ -206,14 +215,15 @@ def run(epochs: int, limit: int | None, device: str, batch_size: int = 64, patie
         va_df = va.reset_index(drop=True).assign(**{f"pred_{p}": va_pred[:, i] for i, p in enumerate(TARGETS)})
         r = evaluate_rating(va_df, {p: f"score_{p}" for p in PARTS}, {p: f"pred_{p}" for p in PARTS},
                              overall_cols=("score_overall", "pred_overall"))
+        score = select_score(r)
         print(f"  epoch {ep+1}/{epochs}  loss={tot_loss/len(dl_tr.dataset):.3f}  val_rho={r['mean_spearman']:.3f}  "
-              f"val_partial_rho={r['mean_partial_spearman_vs_overall']:.3f}  ({time.time()-t0:.1f}s)")
-        if r["mean_spearman"] > best_rho:
-            best_rho, best_state, bad = r["mean_spearman"], {k: v.cpu().clone() for k, v in model.state_dict().items()}, 0
+              f"val_partial_rho={r['mean_partial_spearman_vs_overall']:.3f}  select={score:.3f}  ({time.time()-t0:.1f}s)")
+        if score > best_rho:
+            best_rho, best_state, bad = score, {k: v.cpu().clone() for k, v in model.state_dict().items()}, 0
         else:
             bad += 1
             if bad >= patience:
-                print(f"  early stop (no val mean-Spearman improvement in {patience} epochs)"); break
+                print(f"  early stop (no val {select_metric} improvement in {patience} epochs)"); break
 
     model.load_state_dict(best_state)
     te_r = te.reset_index(drop=True)
@@ -234,7 +244,8 @@ def run(epochs: int, limit: int | None, device: str, batch_size: int = 64, patie
         print(format_report(result_h, "TEST by handedness"))
     print(f"\noverall-score Spearman (test): {overall_spearman:.3f}  (I3D-AE-LSTM baseline: 0.84)")
     summary = {"tag": tag, "lr": lr, "hidden": hidden, "weight_decay": weight_decay, "seed": seed,
-               "patience": patience, "residual_targets": residual_targets, "best_epoch_val_mean_spearman": best_rho,
+               "patience": patience, "residual_targets": residual_targets, "select_metric": select_metric,
+               "best_epoch_val_select_score": best_rho,
                "test_mean_spearman": result["mean_spearman"],
                "test_mean_r_l2": result["mean_r_l2"], "test_mean_partial_spearman_vs_overall": result["mean_partial_spearman_vs_overall"],
                "test_overall_spearman": overall_spearman, "per_part": {p: result["per_part"][p] for p in PARTS},
@@ -257,10 +268,12 @@ def main():
     ap.add_argument("--tag", default="")
     ap.add_argument("--residual-targets", action="store_true",
                      help="train parts on (part - overall) instead of absolute part scores")
+    ap.add_argument("--select-metric", choices=["spearman", "combined"], default="spearman",
+                     help="combined = mean_spearman + partial-rho, for the checkpoint selection/early stop")
     args = ap.parse_args()
     run(args.epochs, args.limit, args.device, args.batch_size, patience=args.patience, lr=args.lr,
         hidden=args.hidden, weight_decay=args.weight_decay, seed=args.seed, tag=args.tag,
-        residual_targets=args.residual_targets)
+        residual_targets=args.residual_targets, select_metric=args.select_metric)
 
 
 if __name__ == "__main__":
