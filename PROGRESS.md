@@ -21,7 +21,7 @@ account; runners retry every 5 min when both are busy. Resume = re-run the runne
 | 4 | Pose on CricketVision (hand-drawn batter boxes) | 7,087 clips, 0 failures |
 | 5 | Ball/bat/stumps detector (YOLO11s) | test mAP50 0.81 |
 | 6 | Stumps clue for the batter finder | far stumps too small at 480p; adds nothing yet |
-| 7 | Batter finder (gradient boosting on tracked-person features) | 91.2% on unseen matches (rules 57%) |
+| 7 | Batter finder (gradient boosting on tracked-person features) | 92.9% on unseen matches, all 6 sources (rules 63%) |
 | 8 | Pose on the other 15,333 clips via the batter finder | 0 failures |
 | 9 | 400-clip visual audit | striker right 92.5% (CricShot10k 89%, mostly keeper confusion) |
 | 10 | Training index `data/processed/pose_index.parquet` | **16,460 train-ready** (train 11,891 / val 2,307 / test 2,262), ~98-99% right striker |
@@ -82,17 +82,19 @@ Details: `docs/iva/iva_results.md`; syllabus mapping: `docs/iva/syllabus_alignme
      weak body part, so the app never once made a part-specific claim the data cannot support.
    - The app's live pitch calibration agrees with the D4 batch results on 42/47 clips, so what users see
      is the same measurement the write-up characterises.
-6. **Open, and the next thing to fix: the batter finder only ever learned one broadcast style.**
-   `models/train_batter_finder.py` trains on `kaggle/chunks/pose-cv-c*` alone -- CricketVision -- and the
-   result is applied to all six sources. CricketVision frames the striker close and large, so the finder
-   leans on size; on an amittalmale drive, where the striker is far and a fielder stands near the camera,
-   it picked the fielder at finder_p 0.902 (above the 0.9 bar, so nothing warned). No threshold fixes it:
-   0.90-0.99 scores 74% and 0.99+ scores 71%. It is a domain shift, not a calibration problem.
-   The labels to fix it already exist: `kaggle/pose-rest-audit/verdicts.csv` holds 400 hand-checked clips
-   from the five non-CricketVision sources, 30 of them wrong, and the errors are named --
-   **keeper 23, track switch 2, slip fielder 2, other person 2, no batter 1**. So the dominant confusion
-   is the wicketkeeper, and the fielder case we hit is the rarer one. Retraining across sources is
-   cheap and sits upstream of everything: a wrong batter poisons pose, contact, shot and score together.
+6. **Fixed: the batter finder only ever learned one broadcast style.** It used to train on
+   `kaggle/chunks/pose-cv-c*` alone (CricketVision) and apply the result to all six sources, which on an
+   amittalmale drive picked a fielder at finder_p 0.902. Retrained across all six sources
+   (`models/train_batter_finder.py`, 2026-10-17): visually reviewed 2,559 clips across the five
+   non-CricketVision sources (`models/finder_review.py`, `kaggle/finder-review-sample.csv`), combined with
+   the existing 400-clip pass/fail audit (`kaggle/pose-rest-audit/verdicts.csv`, which still caught 30
+   keeper-confusion errors the faster visual pass missed -- the two reviews overlapped on 76 clips and
+   disagreed on 5, so the hand audit took precedence there). Confirmed-wrong clips contribute negatives
+   only (the actual batter track wasn't re-identified, just the wrong pick ruled out). New model: 9,004
+   clips (6,121 CricketVision + 2,883 confirmed from the other five), 92.9% grouped 5-fold top-1, every
+   source above 91% (cricshot10k lowest at 92.7%, consistent with where the keeper-confusion errors
+   concentrate). `models/batter_finder.joblib` needs re-uploading to Kaggle before the next pose-rest run
+   picks it up.
    Tried and rejected: `segment_pitch()` from D4 as a geometric prior -- it segments the whole playing
    surface, not the pitch strip, so it does not separate a fielder on grass from the striker.
 7. **Open: normalised-time resampling erases duration.** `models/resample_sequences.py` stretches every
