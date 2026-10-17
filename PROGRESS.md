@@ -162,5 +162,36 @@ sweep, more patience before early-stopping (the val curve was still falling when
 probably a seed-variance check (per #19's protocol) before treating either number as settled. Not yet
 committed to beating the baseline -- flagging honestly rather than overclaiming.
 
+### Update 2026-10-17 (later): a bigger finding -- both models' PREDICTIONS are more collinear than the LABELS
+
+`models/prediction_collinearity_check.py` ran the same PCA/correlation check #17/#18 ran on the labels
+(PC1 97.5% of variance across the 5 part scores), but on each trained model's actual test-set
+predictions instead. Both come back **worse than the labels, not better**:
+
+| | PC1 share | mean pairwise correlation |
+|---|---|---|
+| labels (test split) | 0.979 | 0.95-0.99 |
+| VAE baseline predictions | 1.000 | 0.999 |
+| contrastive predictions | 0.998 | 0.997 |
+
+Neither architecture learns anything resembling independent per-part signal -- both collapse to
+predicting one learned "quality" scalar and copying it across all 5 outputs, more collinear than even
+the (already collinear) labels force them to be. This is a stronger, more fundamental version of the
+#17/#18 finding: it is not just that the labels can't support independent part discrimination, every
+model tried on them inherits and amplifies that collinearity regardless of training objective. The
+nonzero partial-rho-vs-overall numbers above are real but are computed on a sliver of residual variance
+against predictions that are ~99.7-100% explained by one factor, so they should be read as "barely
+any part-specific signal exists" rather than "the model is tracking parts independently."
+
+Likely cause: with MSE loss, the cheapest way to fit 5 correlated targets is to predict their shared
+factor well and leave each part's small independent variance essentially unmodelled (near the mean),
+which *increases* prediction correlation past the label correlation rather than preserving it.
+**Next experiment, queued**: train on *residual* targets (`score_part - score_overall`) instead of
+absolute part scores, so the model can't satisfy the loss by just reproducing the shared factor -- the
+shared factor is removed from the target by construction, forcing it to fit only the part-specific
+deviation. `score_overall` stays a separate, absolute target. If this still doesn't produce
+independently-moving part predictions, that itself is worth reporting as a dataset-level limitation,
+not an architecture one.
+
 ## Open decisions
 - Practice/nets/shadow-batting videos (no bowler or ball) are parked; focus is match clips for now.
