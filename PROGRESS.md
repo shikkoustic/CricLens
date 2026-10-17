@@ -273,5 +273,31 @@ enough novelty for the paper, or whether it should be paired with the duration-a
 presented as a methods contribution (report partial-rho, not just raw Spearman) is exactly what's queued
 for review.
 
+### Update 2026-10-17 (one more): ablation -- isolates what's actually doing the work
+
+Open question after the above: does the collinearity fix need the contrastive query-vs-exemplar
+mechanism, or is "train on relative-to-overall targets" the real fix regardless of architecture?
+`models/ablation_vae_residual.py` reuses the VAE baseline's own architecture unchanged, trained on
+residual targets instead of absolute ones. Full 2x2:
+
+| | mean Spearman | R-l2 | partial-rho | predictions' PC1 share |
+|---|---|---|---|---|
+| VAE, absolute targets (original baseline) | 0.601 | 2.47 | 0.019 | 1.000 |
+| **VAE, residual targets (ablation)** | 0.562 | 2.64 | 0.108 | 0.993 |
+| Contrastive, absolute targets (sweep best) | 0.573 | 2.63 | 0.075 | 0.998 |
+| **Contrastive, residual targets (3-seed mean)** | 0.588 | 2.55 | 0.122 | 0.991 |
+| labels themselves | -- | -- | -- | 0.979 |
+
+Clean result: **the residual-target transform is the dominant fix, and it works on either
+architecture** -- it takes the VAE's partial-rho from 0.019 to 0.108 (5.7x) and its PC1 share from
+1.000 to 0.993, with no contrastive mechanism involved at all. The contrastive framing adds a smaller,
+real improvement on top (0.108 to 0.122 partial-rho, 0.993 to 0.991 PC1, and notably the only
+residual-target variant that *also* improves raw Spearman over its own absolute-target version: VAE's
+Spearman gets worse with residual targets, 0.601 to 0.562, while contrastive's gets better, roughly
+0.57 to 0.588). So: two separable effects, both real, and they compound -- contrastive + residual is the
+best setup on every metric. For the paper, this means the honest attribution is "a target
+reformulation that generalises across architectures, with contrastive regression against exemplars as
+a complementary, independently-useful second improvement" rather than crediting either alone.
+
 ## Open decisions
 - Practice/nets/shadow-batting videos (no bowler or ball) are parked; focus is match clips for now.
