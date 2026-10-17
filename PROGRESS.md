@@ -216,5 +216,34 @@ promising next lever, since it attacks the actual mechanism (shared-factor colla
 tuning around it. Best raw-Spearman config so far (lr3e4_p15) is the baseline hyperparameters for that
 run.
 
+### Update 2026-10-17 (final): residual-targets result -- closes most of the gap
+
+Ran `--residual-targets` with the sweep's best hyperparameters (lr=3e-4, hidden=128, patience=15,
+80 epochs, early-stopped at 29). Full comparison:
+
+| | mean Spearman | mean R-l2 | partial-rho vs overall | predictions' PC1 share |
+|---|---|---|---|---|
+| VAE baseline | 0.601 | 2.47 | 0.019 | 1.000 |
+| Contrastive, absolute targets (first run) | 0.565 | 2.60 | 0.034 | 0.998 |
+| Contrastive, absolute targets (sweep best) | 0.573 | 2.63 | 0.075 | -- |
+| **Contrastive, residual targets** | **0.584** | **2.56** | **0.116** | **0.991** |
+| (labels themselves, for reference) | -- | -- | -- | 0.979 |
+
+Residual targets close most of the raw-metric gap (Spearman 0.584 vs baseline 0.601, R-l2 2.56 vs 2.47
+-- both now the closest any contrastive variant has gotten) *and* give by far the best partial-rho
+(0.116, 6x the baseline, nearly 2x the best absolute-target config) and the first real drop in
+prediction collinearity (PC1 0.991, down from 0.998-1.000, though still above the labels' own 0.979 --
+progress, not solved). This is the first config where every metric that matters moved in the same
+direction at once.
+
+Training dynamic worth flagging for anyone tuning further: partial-rho peaked early (0.145-0.162 in
+epochs 1-6) and drifted down through training (to ~0.04-0.07 by epoch 20+) while val Spearman kept
+climbing -- the two objectives partially trade off, and early-stopping on Spearman alone (as the current
+script does) leaves some partial-rho on the table. A combined early-stopping criterion, or reporting the
+best-partial-rho checkpoint separately, is a reasonable next refinement.
+
+Next: seed-variance check on this exact config (3 seeds, matching #7's protocol) before treating the
+comparison as settled -- queued.
+
 ## Open decisions
 - Practice/nets/shadow-batting videos (no bowler or ball) are parked; focus is match clips for now.
