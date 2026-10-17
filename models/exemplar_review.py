@@ -48,13 +48,13 @@ def render_clip(clip_id: str, source: str, label: str) -> np.ndarray | None:
         return None
     z = np.load(kps_candidates[0])
     lo, contact, hi = z["window"]
-    kps = z["kps"]
+    kps = z["kps"]  # indexed by absolute frame number across the whole clip, not window-relative
     frames = []
     for idx in (int(lo), int(contact), int(hi)):
         f = read_frame(video, idx)
         if f is None:
             return None
-        draw_skeleton(f, kps[idx - int(lo)] if idx - int(lo) < len(kps) else kps[-1])
+        draw_skeleton(f, kps[min(idx, len(kps) - 1)])
         frames.append(f)
     h = min(fr.shape[0] for fr in frames)
     frames = [cv2.resize(fr, (int(fr.shape[1] * h / fr.shape[0]), h)) for fr in frames]
