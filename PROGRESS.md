@@ -245,5 +245,33 @@ best-partial-rho checkpoint separately, is a reasonable next refinement.
 Next: seed-variance check on this exact config (3 seeds, matching #7's protocol) before treating the
 comparison as settled -- queued.
 
+### Update 2026-10-17 (really final): 3-seed variance check -- the result holds
+
+Same config (residual targets, lr=3e-4, hidden=128, patience=15), 3 seeds:
+
+| seed | mean Spearman | mean R-l2 | partial-rho vs overall |
+|---|---|---|---|
+| 0 | 0.584 | 2.56 | 0.116 |
+| 1 | 0.585 | 2.57 | 0.112 |
+| 2 | 0.595 | 2.51 | 0.137 |
+| **mean +/- std** | **0.588 +/- 0.006** | **2.55 +/- 0.03** | **0.122 +/- 0.013** |
+| VAE baseline (single run) | 0.601 | 2.47 | 0.019 |
+
+Tight variance across seeds (std is ~1% of the mean on Spearman, consistent with #7's VAE-baseline
+seed spread) -- this is a reproducible result, not a lucky run. Seed 2 alone gets to 0.595 mean Spearman
+and 2.51 R-l2, within noise of the baseline, while still landing 0.137 partial-rho (7x the baseline).
+Averaged across seeds: raw Spearman within ~2% of baseline, R-l2 within ~3%, partial-rho 6.4x higher.
+
+**Where this leaves the novelty claim**: contrastive regression with residual targets does not clearly
+beat the VAE baseline on absolute score accuracy (Spearman/R-l2), but it is the first model in this
+project (or, per docs/paper/dossier.md, arguably in the reviewed literature) to show a measured,
+reproducible improvement in genuine per-part discrimination on this dataset, without sacrificing much
+overall accuracy to get it. That is the honest shape of the result: not "beats the baseline," but
+"same ballpark on overall accuracy, substantially better at the thing part-wise AQA is supposed to do
+and the literature doesn't actually check for" (per #17/#18's methodological finding). Whether that is
+enough novelty for the paper, or whether it should be paired with the duration-aware idea (#6 above) or
+presented as a methods contribution (report partial-rho, not just raw Spearman) is exactly what's queued
+for review.
+
 ## Open decisions
 - Practice/nets/shadow-batting videos (no bowler or ball) are parked; focus is match clips for now.
