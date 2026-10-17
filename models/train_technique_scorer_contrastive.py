@@ -59,7 +59,7 @@ def from_residual(y: np.ndarray) -> np.ndarray:
     return out
 
 
-def load_data(limit: int | None = None) -> tuple[pd.DataFrame, pd.DataFrame]:
+def load_data(limit: int | None = None, exemplars_path: Path = EXEMPLARS) -> tuple[pd.DataFrame, pd.DataFrame]:
     idx = pd.read_parquet(ROOT / "data/processed/pose_index.parquet")
     seq = pd.read_parquet(ROOT / "data/processed/sequences.parquet")
     score_cols = [f"score_{p}" for p in TARGETS]
@@ -67,7 +67,7 @@ def load_data(limit: int | None = None) -> tuple[pd.DataFrame, pd.DataFrame]:
         ["clip_id", "split", "source", "handedness", "shot"] + score_cols]
     d = d.merge(seq[["clip_id", "seq_path"]], on="clip_id")
 
-    exemplars = pd.read_csv(EXEMPLARS)
+    exemplars = pd.read_csv(exemplars_path)
     d = d[~d.clip_id.isin(exemplars.clip_id)]  # exemplars are references, never queries
     d = d.head(limit) if limit else d
     return d.reset_index(drop=True), exemplars.reset_index(drop=True)
@@ -156,10 +156,11 @@ def predict_scores(model: ContrastiveScorer, df: pd.DataFrame, exemplars: pd.Dat
 
 def run(epochs: int, limit: int | None, device: str, batch_size: int = 64, patience: int = 8,
         lr: float = 1e-3, hidden: int = 128, weight_decay: float = 1e-4, seed: int = 0,
-        tag: str = "", residual_targets: bool = False, select_metric: str = "spearman") -> dict:
+        tag: str = "", residual_targets: bool = False, select_metric: str = "spearman",
+        exemplars_path: Path = EXEMPLARS) -> dict:
     torch.manual_seed(seed)
     np.random.seed(seed)
-    d, exemplars = load_data(limit)
+    d, exemplars = load_data(limit, exemplars_path)
     tr, va, te = (d[d.split == s] for s in ("train", "val", "test"))
     print(f"train={len(tr)} val={len(va)} test={len(te)}  exemplars={len(exemplars)}")
 
@@ -270,10 +271,12 @@ def main():
                      help="train parts on (part - overall) instead of absolute part scores")
     ap.add_argument("--select-metric", choices=["spearman", "combined"], default="spearman",
                      help="combined = mean_spearman + partial-rho, for the checkpoint selection/early stop")
+    ap.add_argument("--exemplars-path", default=str(EXEMPLARS), help="override kaggle/exemplars.csv")
     args = ap.parse_args()
     run(args.epochs, args.limit, args.device, args.batch_size, patience=args.patience, lr=args.lr,
         hidden=args.hidden, weight_decay=args.weight_decay, seed=args.seed, tag=args.tag,
-        residual_targets=args.residual_targets, select_metric=args.select_metric)
+        residual_targets=args.residual_targets, select_metric=args.select_metric,
+        exemplars_path=Path(args.exemplars_path))
 
 
 if __name__ == "__main__":
