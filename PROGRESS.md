@@ -313,5 +313,24 @@ saved at `models/technique_scorer_contrastive_residual_seed2/contrastive_scorer.
 `--select-metric combined` in the script since it's a reasonable thing to try with more seeds/budget,
 but it is not the current best config.
 
+### Update 2026-10-17 (truly last): more exemplars tried, also didn't help
+
+Tried 98 exemplars (all 4 quality-ranked candidates per shot x tier from the original visual review,
+`kaggle/exemplars_expanded.csv`, no new review work needed) instead of the current 50 (top-2 per tier).
+Same winning hyperparameters otherwise. Result: mean Spearman 0.574, R-l2 2.69, partial-rho 0.120 --
+slightly *worse* than the 50-exemplar 3-seed mean (0.588, 2.55, 0.122) on every metric. **Another
+honest negative result**: doubling the reference set diluted the average rather than reducing its
+noise, most likely because the original quality-ranking already put the cleanest 2 candidates per tier
+first, so the extra 2 are measurably noisier references, not just more of the same signal. 50
+exemplars (`kaggle/exemplars.csv`, the original set) remains the better choice; `--exemplars-path`
+stays in the script for anyone who wants to try a different selection (e.g. re-ranking by a different
+quality criterion) rather than just more of the same-ranked candidates.
+
+**Round summary for review**: implementation, hyperparameter sweep, residual-target reformulation (the
+real win), a clean architecture-isolating ablation, and two follow-up refinements that honestly didn't
+help (combined selection, more exemplars) are all done and documented above. The best result stands at
+seed 2 / plain-Spearman selection / 50 exemplars / residual targets: mean Spearman 0.595, R-l2 2.51,
+partial-rho 0.137 (vs VAE baseline's 0.601, 2.47, 0.019).
+
 ## Open decisions
 - Practice/nets/shadow-batting videos (no bowler or ball) are parked; focus is match clips for now.
