@@ -26,3 +26,4 @@ app/runtime/
 
 # Locally downloaded coaching LLM weights (fetched on demand, ~3 GB)
 models/qwen2.5-*/
+models/technique_scorer_vae_residual/
