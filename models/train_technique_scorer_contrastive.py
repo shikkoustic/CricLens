@@ -132,7 +132,11 @@ def predict_scores(model: ContrastiveScorer, df: pd.DataFrame, exemplars: pd.Dat
     return out
 
 
-def run(epochs: int, limit: int | None, device: str, batch_size: int = 64, patience: int = 8) -> dict:
+def run(epochs: int, limit: int | None, device: str, batch_size: int = 64, patience: int = 8,
+        lr: float = 1e-3, hidden: int = 128, weight_decay: float = 1e-4, seed: int = 0,
+        tag: str = "") -> dict:
+    torch.manual_seed(seed)
+    np.random.seed(seed)
     d, exemplars = load_data(limit)
     tr, va, te = (d[d.split == s] for s in ("train", "val", "test"))
     print(f"train={len(tr)} val={len(va)} test={len(te)}  exemplars={len(exemplars)}")
@@ -158,8 +162,8 @@ def run(epochs: int, limit: int | None, device: str, batch_size: int = 64, patie
     print(f"diff distribution (train pairs): mu={diff_mu.round(2)} sd={diff_sd.round(2)}")
 
     in_dim = next(iter(cache.values())).shape[1]
-    model = ContrastiveScorer(in_dim, len(TARGETS)).to(device)
-    opt = torch.optim.Adam(model.parameters(), lr=1e-3, weight_decay=1e-4)
+    model = ContrastiveScorer(in_dim, len(TARGETS), hidden=hidden).to(device)
+    opt = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
 
     dl_tr = DataLoader(PairDataset(tr, exemplars, cache, diff_mu, diff_sd), batch_size=batch_size, shuffle=True)
 
@@ -197,17 +201,20 @@ def run(epochs: int, limit: int | None, device: str, batch_size: int = 64, patie
                                 overall_cols=("score_overall", "pred_overall")) if te_df.handedness.notna().any() else None
     overall_spearman = float(pd.Series(te_df.score_overall).rank().corr(pd.Series(te_df.pred_overall).rank(), method="pearson"))
 
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
-    torch.save(best_state, OUT_DIR / "contrastive_scorer.pt")
+    out_dir = OUT_DIR if not tag else OUT_DIR.parent / f"{OUT_DIR.name}_{tag}"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    torch.save(best_state, out_dir / "contrastive_scorer.pt")
     print(format_report(result, "\nTEST"))
     if result_h:
         print(format_report(result_h, "TEST by handedness"))
     print(f"\noverall-score Spearman (test): {overall_spearman:.3f}  (I3D-AE-LSTM baseline: 0.84)")
-    summary = {"best_val_mean_spearman": best_rho, "test_mean_spearman": result["mean_spearman"],
+    summary = {"tag": tag, "lr": lr, "hidden": hidden, "weight_decay": weight_decay, "seed": seed,
+               "patience": patience, "best_epoch_val_mean_spearman": best_rho,
+               "test_mean_spearman": result["mean_spearman"],
                "test_mean_r_l2": result["mean_r_l2"], "test_mean_partial_spearman_vs_overall": result["mean_partial_spearman_vs_overall"],
                "test_overall_spearman": overall_spearman, "per_part": {p: result["per_part"][p] for p in PARTS},
                "n_train": len(tr), "n_val": len(va), "n_test": len(te), "n_exemplars": len(exemplars)}
-    json.dump(summary, open(OUT_DIR / "summary.json", "w"), indent=2)
+    json.dump(summary, open(out_dir / "summary.json", "w"), indent=2)
     return summary
 
 
@@ -217,8 +224,15 @@ def main():
     ap.add_argument("--limit", type=int, default=None)
     ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     ap.add_argument("--batch-size", type=int, default=64)
+    ap.add_argument("--lr", type=float, default=1e-3)
+    ap.add_argument("--hidden", type=int, default=128)
+    ap.add_argument("--weight-decay", type=float, default=1e-4)
+    ap.add_argument("--patience", type=int, default=8)
+    ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--tag", default="")
     args = ap.parse_args()
-    run(args.epochs, args.limit, args.device, args.batch_size)
+    run(args.epochs, args.limit, args.device, args.batch_size, patience=args.patience, lr=args.lr,
+        hidden=args.hidden, weight_decay=args.weight_decay, seed=args.seed, tag=args.tag)
 
 
 if __name__ == "__main__":
