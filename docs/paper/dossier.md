@@ -71,30 +71,69 @@ Tevin Moodley, Dustin van der Haar (University of Johannesburg). Dataset: `githu
   HRF-DBN highlight summarisation, 96.3%).
 
 ## A3. Kang — Modern Deep Learning Approaches for Cricket Shot Classification — arXiv:2510.09187 (10 Oct 2025)
-Sungwoo Kang, Korea University. Code: `github.com/hpicsk/CricShot10_Baselines`.
+Sungwoo Kang, Korea University. Code: `github.com/hpicsk/CricShot10_Baselines`. **Verified 2026-10-17 against
+the full paper text (arxiv.org/html/2510.09187v1), not just the abstract.**
 
-- **Problem.** Unified re-implementation and benchmarking of seven cricket shot classifiers.
-- **Setup.** CricShot10, **1,888 samples / 10 classes** (~180–200 per class), **stratified random split,
-  fixed seed 27**, 70/15/15 → 1,320 / 284 / 284. Single A100. Models implemented "strictly following the
-  details described in the respective papers".
-- **The reproduction gap.**
-
-  | Original claim | Re-implemented |
-  |---|---|
-  | Kumar/Balaji, modified LRCN — 96% (on a reduced **5-class** subset) | **46.0%** |
-  | Bhat et al. — 99.2% | **55.6%** |
-  | Sen et al. (Sensors 2021), VGG16-GRU — 93% | **57.7%** |
-  | ViT + RNN — 98.9% | **10.6%** |
-  | Attention network — 99.19% | **40.5%** |
-  | Kang's own EfficientNet-B0 + GRU | **92.25%** |
-
+- **Problem.** Unified re-implementation and benchmarking of seven cricket shot classifiers (nine rows in his
+  own results table: three are fine-tuning-depth variants of the same VGG16-GRU model).
+- **Setup.** CricShot10, stated **1,894 clips total** but the stated splits (1,320/284/284) sum to **1,888** --
+  an internal inconsistency. 10 classes, stated "180-200 per class" but Table II implies Pull Shot has only
+  179. **Stratified random split, fixed seed 27**, 70/15/15. Single A100. "All models were implemented
+  strictly following the details described in the respective papers" -- i.e. he did not change the
+  architectures, only standardised the split.
+- **The seven original methods, verified in full technical detail** (architecture, original claim, Kang's
+  re-implementation):
+  1. **LRCN** (Kumar et al., *IJRTE* 2019, also cited as "Balaji et al." -- a naming inconsistency in Kang's
+     own paper): 4-layer CNN (4x4 max-pool, dropout 0.4) -> 1-layer LSTM (32 units). 64x64 frames, 25/clip,
+     fixed crop. Claimed **96%** on a reduced **5-class** subset (not the full 10). Re-implemented: **46.03%**
+     (F1 45.90%).
+  2. **CNN+RNN** (Bhat et al., *IJERCSE* 2024): 4-layer CNN -> 9,216-dim flattened vector/frame -> 2-layer GRU
+     (512 units). 100x100, 25 frames, full frame. Claimed **99.2%**. Re-implemented: **55.63%** (F1 55.56%).
+  3. **Attention Network** (same Bhat et al. paper): BiLSTM + attention-weighted sum over frames. Claimed
+     **99.19%**. Re-implemented: **40.49%** (F1 37.78%).
+  4. **ViT-GRU Hybrid** (same Bhat et al. paper): 6-layer ViT encoder (20x20 patches/frame) -> GRU. Claimed
+     **98.9%**. Re-implemented: **10.56%** (F1 2.02% -- effectively chance on 10 classes).
+  5. **Custom CNN-GRU** (Sen, Deb, Dhar & Koshiba, *Sensors* 2021 -- the paper that introduced CricShot10):
+     custom 5-layer CNN + GRU, 15 frames/clip randomly sampled, 224x224. No number stated for this exact
+     variant in the original paper. Re-implemented: **55.82%** (F1 54.05%).
+  6. **Dilated CNN-GRU** (same Sen et al. paper): dilated convolutions (wider receptive field, same param
+     count) + GRU. No number stated originally. Re-implemented: **57.67%** (F1 57.34%) -- Kang's
+     best-performing *rebuild of someone else's idea*.
+  7. **VGG16-GRU** (same Sen et al. paper): ImageNet-pretrained VGG16 + GRU, three fine-tuning depths tested.
+     Claimed **93%** (final-8-layers variant), 15 frames/clip. Re-implemented: final-8 **55.29%** (F1 56.00%),
+     frozen 48.94%, final-4 26.46%.
+- **A real error in Kang's own headline claim.** His abstract pairs "93% (Sensors)" with "57.7%" as the
+  like-for-like reproduction -- but **57.7% is the Dilated CNN-GRU result, a different model** (#6 above).
+  The actual matching figure for the 93% claim is VGG16-GRU final-8's **55.29%** (#7). This is a genuine
+  mismatch in the paper's own flagship comparison.
+- **Kang's own model: EfficientNet-B0 + GRU.** Pretrained EfficientNet-B0 (1,280-dim/frame) -> 2-layer
+  **bidirectional** GRU -> temporal attention -> linear classifier. 224x224, 30 frames uniform-sampled,
+  aspect-preserving resize+pad, ImageNet normalisation. Hyperparameters tuned via Optuna (search space and
+  final values not given). **Result: 92.25%** accuracy (P 92.27 / R 92.25 / F1 92.13) on 284 test samples.
+- **What Kang changed, exactly.** Not itemised per model -- the only standardisation he describes is the
+  70/15/15 stratified seed-27 split applied uniformly. The architectures themselves were left as originally
+  described, so the entire 40-90-point drop is attributed to evaluation protocol, not re-implementation
+  choices -- which makes his own unproven "likely due to splits/eval code" explanation more plausible as a
+  partial cause, but he never isolates or tests it.
+- **Further gaps found on a full read (not just the results section).**
+  - **Single run per model, no seeds, no variance reported** -- some of his own baseline-to-baseline gaps
+    (e.g. 55.63% vs 55.82%) are within what we've measured as ordinary seed noise on a comparably-sized task.
+  - **Zero training hyperparameters given for any model** (no LR, batch size, optimiser, epoch count), not
+    even for his own winning model -- not reproducible from the paper text alone.
+  - No limitations section; "future work" is one sentence pointing at the released code.
+  - No data-quality, duplicate, or leakage discussion anywhere -- confirms the opening below.
+  - No survey or broader sports-video-analysis literature cited at all, despite the introduction's claim of
+    "substantial progress" in the field.
 - **The opening.** Kang attributes the gap to *"differences in dataset splits, evaluation code, or minor
   implementation details not specified in the papers"* — **he never diagnoses near-duplicate leakage and
   never audits the data.** His own 92.25% is on a stratified random, ungrouped split of CricShot10, the
   dataset where the CricLens manifest build found **157 verified duplicate clusters, 75 spanning its own
   train/val/test folders**.
 - **Relevance.** Legitimises a leakage-audited re-baselining contribution, and leaves the root cause open
-  for us to supply.
+  for us to supply. Also a usable example in its own right: a paper built specifically to expose
+  reproducibility problems that has real, checkable errors of its own (the 57.7% mismatch, the 1894 vs 1888
+  arithmetic, "seven" vs nine table rows) -- worth one sentence in our related-work section as a reminder
+  that credibility claims need the same scrutiny we're applying to everyone else.
 
 ---
 
@@ -249,6 +288,30 @@ Resources: `ZhouKanglei.github.io/AQA-Survey`, `Awesome-AQA`, **AQA-Benchmark (c
 - **Practical value to us: their benchmark code is the fastest honest route to reproducing USDL / CoRe /
   TSA baselines on CricLens data** rather than reimplementing each from scratch.
 
+## B10. Qi, Ye, Peng & Ma — Action Quality Assessment via Hierarchical Pose-Guided Multi-Stage Contrastive Regression — IEEE TIP 2025, arXiv:2501.03674 (submitted 7 Jan 2025, v2 24 Oct 2025)
+**Read 2026-10-17, from the 2023+ recency search.** Not cricket (diving: FineDiving, MTL-AQA), but the
+closest available 2025 paper to our own "duration gets erased" novelty candidate.
+
+- **The argument.** Resampling a clip to a fixed length (exactly what `models/resample_sequences.py` does,
+  and what every AQA paper we've read does) breaks an action's real sub-phases and causes scoring errors --
+  their example is a dive's distinct phases being blurred together by uniform resampling.
+- **Method (from the abstract; full architecture not accessible from this environment).** A multi-scale
+  dynamic visual-skeleton encoder (spatio-temporal visual + skeletal features) -> a procedure segmentation
+  network (separates sub-actions) -> multi-modal fusion (skeleton features as "physics structural priors")
+  -> multi-stage contrastive regression for the final score.
+  (Note: the AQA literature's *existing* "settled" position, per `existing_pipeline.md` Stage 3 and B6/B13 in
+  this dossier, is that explicit phase segmentation has a low ceiling -- GT boundaries buy ~1 Spearman point,
+  and learned-parts-with-no-labels beats explicit segmentation. Qi et al.'s procedure-segmentation step
+  should be read against that finding, not as a settled win.)
+- **Data.** FineDiving, MTL-AQA, plus a **new FineDiving-Pose dataset** they built because they didn't trust
+  the existing pose labels on FineDiving -- same instinct as our own CricketVision-scores and dedup work.
+  No numeric results were retrievable from this environment (abstract-only access); claims "effectiveness and
+  superiority" on both benchmarks without giving the figures here.
+- **Relevance.** The strongest available citation that someone else, recently, in a different sport, is
+  making essentially our own "fixed-length resampling erases real timing information" argument (PROGRESS.md
+  item 7) -- worth citing as independent, contemporary support for that novelty direction, while noting we
+  have not yet verified it beats baselines by how much.
+
 ---
 
 # Cluster C — Skill assessment and feedback generation
@@ -358,6 +421,37 @@ IRIMAS Université de Haute-Alsace, University of Florence, Monash. A standardis
 UI-PRMD — the same "the field's protocols are inconsistent, here is a unified one" move that Kang (A3) and
 Zhou et al. (B9) make. Useful precedent for framing our leakage-audited benchmark as a contribution type
 that journals accept.
+
+## C10. Martinović — Explaining Cricket Shot Techniques with Explainable AI — TU Delft Bachelor's thesis (CSE3000 Research Project), 22 June 2025
+**Read in full 2026-10-17** (PDF extracted locally; repository.tudelft.nl blocks direct fetch). Applies SHAP,
+Grouped SHAP, Feature/Permutation Importance, LIME, Grad-CAM and ALE plots to cricket shot classifiers.
+
+- **Two pipelines.** (1) MediaPipe keypoints (17 upper-body joints) -> Random Forest, both multi-class
+  (5 shots: Bowled, Cover Drive, Defence, Pull Shot, Reverse Sweep) and one-vs-rest binary (binary performed
+  better and gave more useful explanations, so most results are from the binary setting). 80/20 split,
+  n_estimators=100, random_state=42. (2) Raw frames (10/clip, 100x100 RGB) -> CNN-LSTM (after Ahmad et al.
+  2023) -> Grad-CAM on the final conv layer.
+- **Data.** 722 labelled clips, 5 shot types -- explicitly flagged by the author as small, a stated
+  limitation with "dataset expansion" as the top future-work item.
+- **The standout finding.** The CNN-LSTM pipeline reached **92.41% validation accuracy**, but Grad-CAM
+  revealed it was attending to **the scoreboard and the grass/ground type**, not the batter's body --
+  because clips of the same shot type tended to come from the same match or ground. A directly visualised,
+  reproducible example of the exact shortcut-learning/leakage failure mode we argue the whole field is
+  vulnerable to (Kang A3, Rajarajeswari A6, the 99.77% papers at A7) -- this one is the rare case where
+  someone actually opened the black box and *showed* it, rather than us inferring it from split arithmetic.
+  Directly citable for our introduction/motivation.
+- **Pose-side finding.** Across SHAP, Grouped SHAP, Feature/Permutation Importance and LIME, the
+  **left/right pinky and wrist vertical position** consistently ranked as the most influential keypoints
+  across shot types (both hands hold the bat, so this tracks biomechanically) -- a different question from
+  our own label-collinearity finding (which is about whether 5 *scores* are independent, not which
+  *keypoints* a classifier weights), but a useful, concrete example of pose-based interpretability done
+  properly, worth citing if we discuss interpretability of our own shot classifier or scorer.
+- **Also noted as a limitation in the paper itself:** MediaPipe initially picked up the wrong person (umpire/
+  bowler) until the author manually trimmed clips and pre-cropped with YOLOv8 -- the same batter-identification
+  problem as our own batter finder, independently hit by a different author on different data.
+- **Relevance.** Strong, recent, directly-on-topic supporting citation for (a) the leakage/shortcut-learning
+  argument generally, with visual proof, and (b) framing why interpretability matters once a model is
+  trusted for coaching feedback.
 
 ---
 
@@ -559,14 +653,36 @@ University of Johannesburg + Habib Noorbhai.
   final 8 VGG16 layers → **93%**.
 - Kang (A3) reproduces this at **57.7%**.
 
-## A6. Rajarajeswari, Prashant, Srinivasan & Dubey — Deep learning based cricket batting shot classification and performance analysis — Scientific Reports (2026)
-- **3D CNN + optical flow + YOLOPose**; performance analysis by **cosine similarity** against a curated
-  set of professional players' shots.
-- **Data: the Kaggle "Cricket Shots IPL 2023" dataset — ~1,050 videos, ~150 per class across 7 classes.**
-  (That is one of CricLens's six sources; we retain 1,922 clips from it.)
-- **Reported accuracy 91.37% / 92%** (and they quote a prior 99.77% figure from the Sensors 2023 work).
-- No leakage control, no grouped split, small dataset. The closest published attempt at "analytics
-  generation" for cricket — and a direct comparison point for CricLens, on shared source data.
+## A6. Rajarajeswari, Prashant, Srinivasan & Dubey — Deep learning based cricket batting shot classification and performance analysis — Scientific Reports 16:24423 (28 May 2026), DOI 10.1038/s41598-026-52617-1
+VIT Chennai. **Re-verified in full 2026-10-17 (fixed an earlier transcription error -- see below).**
+
+- **Data.** Kaggle "Cricket Shots-IPL 2023" (Bhat et al.) -- the same source as one of CricLens's six.
+  Size is inconsistent across the paper's own sections: Methods says "~1050 videos (150/class, 7 classes)",
+  the train/test counts given (1,021 + 752) sum to **1,773**, and the Discussion separately states "1,773
+  videos". Classes: drive, pull, cut, sweep, flick, slog, misc.
+- **Split: not a clean held-out test.** Described as "80-20" but 752/1,773 is ~42%, not 20%. The paper states
+  the **test set was also used for validation during training** (learning-rate scheduling, early stopping) --
+  so the reported "test" accuracy is not from data withheld from model selection. No stratification or
+  grouping by player/match/source video; no deduplication; leakage is not discussed anywhere.
+- **Architecture.** RGB-only: 20 frames/clip (75x75x3) -> 4x Conv3D (32/64/128/256 filters, 3x3x3, batchnorm)
+  -> global average pool -> FC 512 -> FC 256 (dropout 0.4) -> 7-way softmax. 1.43M params. AdamW, lr 0.001,
+  batch 16, 50 epochs, ReduceLROnPlateau + EarlyStopping (patience 10) on val loss. Optical flow (Farneback)
+  and YOLOv8n-pose (17 COCO keypoints) are computed but **not fed into the classifier** -- flow is only used
+  for the cosine-similarity comparison, pose only for "interpretability". The paper calls this "implicit
+  fusion"; the classifier itself is unimodal RGB.
+- **Headline: 95.61% test accuracy** on 752 clips (not 91.37% -- that figure belongs to a *different*,
+  prior paper, "CNN-SVM (Kumar et al.)", cited in the authors' own comparison table; corrects our earlier
+  note). Macro P/R/F1 all 0.95. Internal numbers conflict: Methods states training acc 97.03% vs Results'
+  95.49%; summing the paper's own stated confusion-matrix diagonal gives 717/752 = 95.35%, not 95.61%.
+- **Their own comparison table undercuts their "new SOTA" claim**: lists a prior pose+ML method (Siddiqui
+  et al.) at **99.77%** right next to their 95.61%, dismissed in one phrase as "a controlled dataset" with
+  no further justification -- the same 99.77% figure we already flag (A7) as implausible on broadcast video.
+  Also lists Shot-ViT (Dey & Biswas) at 92.58% (not independently verified by us, see below).
+  Feedback thresholds for the cosine-similarity score have gaps/overlaps (">0.85", "0.75 to 0.85", "below
+  0.6 to 0.75").
+- No leakage control, no grouped split, no genuinely held-out test set. The closest published attempt at
+  "analytics generation" for cricket, and a direct comparison point for CricLens on shared source data --
+  but its own reported number should be read with the above caveats, not taken as a clean benchmark.
 
 ## A7. Cricket HPE + ML — Sensors 23(15):6839 (2023)
 MediaPipe features + RF / SVM / KNN / DT / LR / LSTM; reports **99.77% with Random Forest**, k-fold 95.0%
@@ -577,6 +693,47 @@ broadcast cricket video is not plausible without clip-level leakage or a trivial
 Early cricket stroke localisation and fine-grained annotation. Gupta & Balan's later TAL-inspired pipeline
 (C3D + GRU, constrained and unconstrained variants) reports **weighted mTIoU 0.9376 (highlights) and 0.715
 (generic)** for single-category temporal localisation, as reported in CricTAL's Table 2.
+
+## A12. Shome, Rahad & Debnath — A 3D Pose-Based Ensemble Framework for Cricket Shot Classification and Automated Biomechanical Analysis — arXiv:2609.26923 (2026, preprint, no peer-reviewed venue)
+Khulna University. **Read in full 2026-10-17.** Found via the 2023+ recency search requested by the
+supervisor; the newest, closest methodological cousin to CricLens found so far.
+
+- **Pipeline.** YOLO crops the batsman (area outside the box masked black) -> MeTRAbs estimates **3D** pose
+  (30 SMPL30-style joints/frame, vs our 2D/17-joint ViTPose) -> 15 frames/clip, pelvis-centred and
+  pelvis-to-thorax-scaled -> classify 4 shots (drive, pull, flick, defense).
+- **Models.** An adapted LRCN (dense 128 -> 1D conv k=3 -> 2x BiLSTM 64/32 -> dense 32 -> softmax) and a TCN
+  (dense 128 -> 3x dilated causal-conv residual blocks, dilations 1/2/4 -> global avg pool -> dense 64/32 ->
+  softmax), averaged as a soft-voting ensemble. Also a separate classical-ML ensemble (SVM + RF + XGBoost).
+  Adam, lr 0.001, batch 16, up to 200 epochs, class weights, sparse categorical cross-entropy.
+- **Data.** KUCricShot, 1,278 clips, 28 manually excluded for quality -> 1,250 (drive 335 / flick 351 /
+  defense 318 / pull 246). **Plain 5-fold stratified cross-validation -- no grouping by player, match, or
+  source video.** Same leakage gap as every other cricket paper we've read, on 2026 work.
+- **Results.** Ensemble (LRCN+TCN): **97.68% +/- 0.99%**. LRCN alone 96.43% +/- 1.81%, TCN alone 95.79% +/-
+  1.27%, BiLSTM 92.46%, classical-ML ensemble 95.53% +/- 1.26%. 29/1,250 misclassified (2.32%); dominant
+  confusions drive<->defense (13) and defense<->flick (9).
+- **Their own comparison table** places a raw-video LRCN at 73% and a 2D-pose LRCN (CricPose360) at 93%
+  against their 97.68%, calling the source datasets "similar type" -- not a controlled head-to-head, same
+  pattern as every other cross-paper comparison table we've checked in this domain.
+- **Relevance.** At least 5-fold cross-validation (more rigour than most of the corpus, which reports a
+  single random split), but still no leakage control -- directly supports our "even the newest 2026 work in
+  this exact space hasn't fixed this" framing, and is close enough in method (pose-based ensemble, same
+  cricket-shot problem) to cite as a genuine current baseline, not just a credibility example.
+
+## A13. Dey & Biswas — Shot-ViT: Cricket Batting Shots Classification with Vision Transformer Network — *Iranian Journal of Electrical and Computer Engineering* (Dec 2024), SSRN preprint April 2025
+**Not independently verified** -- blocked by 403 on all four sources tried (IJE PDF, IJE HTML, ResearchGate,
+SSRN) as of 2026-10-17. What's known only secondhand, via Rajarajeswari (A6)'s comparison table: fine-tuned
+ViT on a new "CBSId" dataset (2,160 annotated images, 7 classes), reports **92.58% validation accuracy**,
+beating VGG19/ResNet50/I-AlexNet/ViT_B32 baselines (exact baseline numbers not seen directly). Note it is
+**image-based**, not video -- no temporal modelling, a narrower task than ours. Re-attempt access (library
+proxy, Sci-Hub-adjacent legitimate routes, or email the authors) before citing numbers directly; cite via
+Rajarajeswari's secondhand figure only if full-text access stays unavailable.
+
+## A14. Singha, Hassan, Sakib & Deb — Spatio-Temporal Hybrid Neural Network for Automated Classification of Batting and Bowling Actions in Cricket Videos — 2025 ICCIT, DOI 10.1109/ICCIT68739.2025.11491100 (published online 19 Dec 2025)
+**Not verified at all** -- IEEE Xplore paywall, no full text found via ResearchGate, Google Scholar, or any
+other mirror as of 2026-10-17; not even a visible abstract or reported accuracy number. Secondhand mentions
+only describe a self-attention module for semi-supervised key-frame extraction. Classifies **both batting
+and bowling** actions (most of the corpus is batting-only), which would make it worth reading if accessible.
+Do not cite any number for this paper until the actual text is obtained (try institutional/library access).
 
 ---
 

@@ -1,8 +1,12 @@
-# CricLens reading log — 53 papers
+# CricLens reading log — 59 papers
 
 Status key: **F** = read in full from the publisher PDF · **T** = targeted read (abstract, method, results,
 conclusion) · **✗** = could not retrieve.
-All 53 PDFs were downloaded and text-extracted on 2026-09-21; every entry below was read at least at level T.
+The original 53 PDFs were downloaded and text-extracted on 2026-09-21; every entry below was read at least
+at level T. **A12-A14 and B10/C10 added 2026-10-17**, specifically to satisfy the supervisor's request for
+2023+ recency -- see those entries and `dossier.md` for full notes, including two (A13, A14) blocked by
+paywalls/403s and not independently verified. A3 and A6 above were re-verified against full paper text on
+the same date; the numbers in this table now reflect that correction (A6 was previously mis-stated).
 Detailed notes: `dossier.md`. Gap analysis: `related_work.md`.
 
 ## A. Cricket
@@ -14,11 +18,14 @@ Detailed notes: `dossier.md`. Gap analysis: `related_work.md`.
 | A3 | Kang, **Cricket baseline study** | arXiv:2510.09187, 2025 | CricShot10, 1,888 clips / 10 cls, random seed-27 split | 7 models re-implemented | 96%→**46.0%**, 99.2%→**55.6%**, 93%→**57.7%**; own SOTA **92.25%** | F |
 | A4 | Moodley, van der Haar & Noorbhai, **Backlift** | Sci. Reports 12, 2022 | **200 images**, 2 classes (LBBT/SBBT) | AlexNet / InceptionV3 / IRv2 / Xception | Xception **98.2%**, P 100 / R 95 / F1 97–98 | T |
 | A5 | Sen et al., **CricShotClassify** | Sensors 21(8):2846, 2021 | CricShot10 (introduced), 10 classes | CNN+GRU; VGG16-GRU transfer | frozen **86%**, fine-tuned **93%** | T |
-| A6 | Rajarajeswari et al. | Sci. Reports, 2026 | Kaggle IPL-2023, ~1,050 clips / 7 cls | 3D CNN + optical flow + YOLOPose; cosine similarity vs pros | **91.37 / 92%** | T |
+| A6 | Rajarajeswari et al. | Sci. Reports 16:24423, 28 May 2026 | Kaggle IPL-2023, 1,773 clips (stated ~1,050 inconsistently) / 7 cls | 3D CNN (RGB only); optical flow + YOLOPose used for similarity/"interpretability" only | **95.61%** (corrected; test set also used for val/early-stop) | F |
 | A7 | Cricket HPE + ML | Sensors 23(15):6839, 2023 | small | MediaPipe + RF/SVM/KNN/LSTM | **99.77%** (implausible — cite as cautionary) | T |
 | A8 | Gupta & Balan, stroke extraction | arXiv:1901.03107 / 1511.07607 | cricket | C3D + GRU localisation | mTIoU **0.9376** / **0.715** | T |
 | A9 | CricShot10k | IEEE Access 2026 | 10,086 clips / 15 cls | CricShotNet, EfficientNetV2-S + GRU | **89%** | ✗ IEEE bot-block |
 | A10 | I3D-AE-LSTM journal extension | Expert Systems w/ Applications | — | — | — | ✗ Elsevier paywall |
+| A12 | Shome, Rahad & Debnath, **3D pose ensemble** | arXiv:2609.26923, 2026 (preprint) | KUCricShot, 1,250 clips / 4 cls, 5-fold stratified CV (no grouping) | YOLO + MeTRAbs 3D pose, LRCN+TCN ensemble | **97.68% +/- 0.99%** | F |
+| A13 | Dey & Biswas, **Shot-ViT** | IJECE, Dec 2024 / SSRN 2025 | CBSId (new), 2,160 images / 7 cls | Fine-tuned ViT, image-based (no temporal model) | **92.58%** (secondhand only, via A6's table) | ✗ 403 on all 4 sources tried |
+| A14 | Singha, Hassan, Sakib & Deb, batting+bowling hybrid | ICCIT 2025, DOI 10.1109/ICCIT68739.2025.11491100 | unknown | self-attention + hybrid spatio-temporal net, semi-supervised key-frame extraction | not found | ✗ IEEE paywall, no mirror found |
 
 ## B. Action Quality Assessment
 
@@ -33,6 +40,7 @@ Detailed notes: `dossier.md`. Gap analysis: `related_work.md`.
 | B7 | An, Qi & Ma, **MCoRe** | arXiv:2401.02841, 2024 | FineDiving | multi-stage contrastive regression | **0.9232**, AIoU 98.26/79.17 | T |
 | B8 | Yin, Parmar et al., **Decade of AQA** | IJCV (arXiv:2502.02817) | survey, 200+ papers, 26 datasets / 9 domains | PRISMA | *"biggest AQA dataset has more than 20000 samples"* | F |
 | B9 | Zhou et al., **AQA survey + benchmark** | Pattern Recognition 2026, DOI 10.1016/j.patcog.2026.113933 | survey + **unified benchmark code** | PRISMA + standardised re-runs | accuracy **and** efficiency reported | T |
+| B10 | Qi, Ye, Peng & Ma, pose-guided contrastive AQA | IEEE TIP 2025, arXiv:2501.03674 | FineDiving, MTL-AQA, new FineDiving-Pose | segment sub-actions -> pose-guided multi-stage contrastive regression | not accessible (abstract-only) | T |
 | B10 | Qi et al., hierarchical pose-guided MCoRe | IEEE TIP | FineDiving | pose-guided multi-stage contrastive regression | **0.9266–0.9310** | T |
 
 ## C. Skill assessment and feedback
@@ -48,6 +56,7 @@ Detailed notes: `dossier.md`. Gap analysis: `related_work.md`.
 | C7 | Bianchi & Liotta, **SkillFormer** / **ProfVLM** | arXiv 2505.08665 / 2509.26278 | Ego-Exo4D | multi-view proficiency, parameter-efficient | **4.5× fewer** trainable params | T |
 | C8 | Liao, Vakanski & Xian | IEEE TNSRE (arXiv:1901.10435) | UI-PRMD | skeleton → continuous quality score | — | T |
 | C9 | Ismail-Fawaz et al., rehab benchmark | arXiv:2507.21018 | KIMORE, UI-PRMD | standardised benchmark | — | T |
+| C10 | Martinović, **cricket shot XAI** | TU Delft BSc thesis, 22 Jun 2025 | 722 clips / 5 cls | MediaPipe+RF and CNN-LSTM, both with SHAP/LIME/Grad-CAM etc. | CNN-LSTM 92.41% val acc, but Grad-CAM showed it reads scoreboard/grass, not the batter | F |
 
 ## D. Machinery
 
