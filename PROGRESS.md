@@ -134,5 +134,33 @@ novelty, and show the novelty beats the baseline. Against that, what we hold tod
   1,156 strokes duplicated across annotator folders, and CricShot10's *published* split leaking 75
   duplicate clusters across its own train/val/test.
 
+### Update 2026-10-17: contrastive regression, first result (not yet beating baseline)
+
+Per a supervisor conversation, the LLM coaching-feedback step is dropped from the app and the paper
+focuses purely on shot classification + technique scoring; the novelty direction settled on is
+**contrastive regression against fixed exemplars** (CoRe/TSA/MCoRe family, docs/paper/dossier.md B10),
+not the duration-aware representation above (still a valid open item, just not what got built first).
+
+Built: `kaggle/exemplars.csv` -- 50 clips (10 per shot type, 5 score tiers each), quality-filtered and
+visually confirmed clean at window start/contact (`models/exemplar_review.py`), train-split only so
+val/test never leak into the reference set. `models/train_technique_scorer_contrastive.py` -- Siamese
+GRU encoder (shared weights) predicts the score diff between a query and each same-shot exemplar; at
+inference, predicted score = mean(exemplar_score + predicted_diff) across that shot's 10 exemplars.
+
+First full run (60 epochs, early-stopped at 11): **does not yet beat the VAE baseline** on raw metrics.
+
+| | mean Spearman | mean R-l2 | partial-rho vs overall |
+|---|---|---|---|
+| VAE baseline (`models/technique_scorer/summary.json`) | 0.601 | 2.47 | 0.019 |
+| Contrastive (this run) | 0.565 | 2.60 | 0.034 |
+
+Early stop after just 3 productive epochs suggests underfitting/over-regularisation at this scale (only
+50 exemplars x ~3,662 train clips = ~37k pairs, GRU hidden=128, no hyperparameter search yet) rather
+than the idea being wrong -- partial-rho vs overall, the metric that actually matters for the paper's
+"parts carry independent signal" claim, did move the right direction. Needs: a learning-rate/hidden-size
+sweep, more patience before early-stopping (the val curve was still falling when it stopped), and
+probably a seed-variance check (per #19's protocol) before treating either number as settled. Not yet
+committed to beating the baseline -- flagging honestly rather than overclaiming.
+
 ## Open decisions
 - Practice/nets/shadow-batting videos (no bowler or ball) are parked; focus is match clips for now.
