@@ -18,6 +18,7 @@ kaggle/finder-review/tiles.csv
 models/seed_sweep/
 models/shot_classifier/
 models/technique_scorer/
+models/technique_scorer_contrastive/
 models/tune_sweep/
 models/tune_confirm/
 app/runtime/
