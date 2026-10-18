@@ -127,8 +127,10 @@ the full paper text (arxiv.org/html/2510.09187v1), not just the abstract.**
 - **The opening.** Kang attributes the gap to *"differences in dataset splits, evaluation code, or minor
   implementation details not specified in the papers"* — **he never diagnoses near-duplicate leakage and
   never audits the data.** His own 92.25% is on a stratified random, ungrouped split of CricShot10, the
-  dataset where the CricLens manifest build found **157 verified duplicate clusters, 75 spanning its own
-  train/val/test folders**.
+  dataset where the CricLens manifest build found **157 verified duplicate clusters, 74 spanning its own
+  train/val/test folders (38 touching test)** -- all 157 manually re-verified 2026-10-18 (frame-aligned
+  diff + scoreboard-level visual check on every elevated/sampled pair + full visual scan), zero false
+  positives.
 - **Relevance.** Legitimises a leakage-audited re-baselining contribution, and leaves the root cause open
   for us to supply. Also a usable example in its own right: a paper built specifically to expose
   reproducibility problems that has real, checkable errors of its own (the 57.7% mismatch, the 1894 vs 1888
@@ -772,7 +774,8 @@ pre-trained models and never retrain on enhanced images.
 ### ✓ CONFIRMED and strengthened — Gap 3 (leakage)
 I3D-AE-LSTM: random 75/15/10, *"through trial and error"*, no grouping — on a dataset our build found to
 carry 1,156 strokes duplicated across annotator folders. Kang: stratified random seed 27 on CricShot10,
-where we found 157 duplicate clusters with 75 spanning its own official splits. Published precedent for
+where we found 157 duplicate clusters with 74 spanning its own official splits (38 touching test),
+manually re-verified with zero false positives. Published precedent for
 the fix and for the contribution type: F6 (geospatial, 89% duplicates / 93–97% leakage, pHash pipeline).
 The VLM-judge paper (C6) even masks scoreboards *"to prevent data leakage"*.
 

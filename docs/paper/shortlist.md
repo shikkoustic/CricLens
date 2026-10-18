@@ -54,8 +54,9 @@ Re-implements seven published models on one benchmark: 96% → **46.0%**, 99.2% 
 
 He blames *"differences in dataset splits, evaluation code, or minor implementation details"* — and never
 audits the data. His own 92.25% is on a **stratified random, ungrouped split of CricShot10**, the dataset
-where your manifest build found **157 duplicate clusters, 75 spanning its own official train/val/test
-folders**. He named the symptom; you can supply the diagnosis.
+where your manifest build found **157 duplicate clusters, 74 spanning its own official train/val/test
+folders (38 touching the test folder)** -- all 157 manually re-verified, zero false positives. He named
+the symptom; you can supply the diagnosis.
 
 **Take away:** your permission to make leakage-audited re-baselining a contribution, plus the honest
 numbers to compare against.

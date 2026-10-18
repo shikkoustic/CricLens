@@ -72,7 +72,8 @@ id exists), stratified on shot class. **No match or duplicate cluster appears in
 - CricketVision ships **1,156 strokes duplicated across annotator folders** — identical frames,
   same stroke index, filed under different video names.
 - The CricShot10 HuggingFace mirror's **own published split leaks**: 157 duplicate clusters
-  inside it, **75 spanning its train/val/test folders**.
+  inside it (323 clips), **74 spanning its train/val/test folders (38 touching test)** -- all 157
+  manually re-verified, zero false positives.
 
 **Label taxonomy.** Unified to 8 shots (drive, defence, flick_glance, pull_hook, cut, sweep,
 lofted, scoop) plus "other", with an off/leg/straight side axis that is handedness-independent.
