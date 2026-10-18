@@ -263,7 +263,9 @@ def vitpose(frames, boxes):
         ch = idx[s:s + 48]; bx = []
         for i in ch:
             x0, y0, x1, y1 = boxes[i]; pw, ph = PAD * (x1 - x0), PAD * (y1 - y0)
-            x0, y0, x1, y1 = max(0, x0 - pw), max(0, y0 - ph), min(W - 1, x1 + pw), min(H - 1, y1 + ph)
+            # no clamping: ViTPose's processor fills outside the image with black (zero padding); clamping
+            # shifted and shrank the crop near frame edges (D3, kaggle/pose-pad)
+            x0, y0, x1, y1 = x0 - pw, y0 - ph, x1 + pw, y1 + ph
             bx.append([[x0, y0, x1 - x0, y1 - y0]])
         inp = proc(images=[cv2.cvtColor(frames[i], cv2.COLOR_BGR2RGB) for i in ch], boxes=bx, return_tensors="pt").to(DEV)
         if DEV == "cuda":

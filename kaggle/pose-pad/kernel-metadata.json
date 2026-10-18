@@ -1,0 +1,16 @@
+{
+  "id": "shikkoustic/criclens-pose-pad",
+  "title": "criclens-pose-pad",
+  "code_file": "pose_pad.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": true,
+  "enable_internet": true,
+  "machine_shape": "NvidiaTeslaT4",
+  "dataset_sources": [
+    "shikkoustic/criclens-all"
+  ],
+  "competition_sources": [],
+  "kernel_sources": []
+}

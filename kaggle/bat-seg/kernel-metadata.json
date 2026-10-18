@@ -1,0 +1,17 @@
+{
+  "id": "shikkoustic/criclens-bat-seg",
+  "title": "criclens-bat-seg",
+  "code_file": "bat_seg.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": true,
+  "enable_internet": true,
+  "machine_shape": "NvidiaTeslaT4",
+  "dataset_sources": [
+    "shikkoustic/criclens-all",
+    "shikkoustic/criclens-detection"
+  ],
+  "competition_sources": [],
+  "kernel_sources": []
+}

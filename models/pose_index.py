@@ -35,6 +35,19 @@ def collect() -> pd.DataFrame:
             rows.append(d)
     idx = pd.concat(rows, ignore_index=True)
     idx = idx[[c for c in idx.columns if not c.startswith("_")]]
+    # Zero-padding re-run (kaggle/pose-pad): clips whose batter box was clamped at a frame edge get their re-estimated
+    # joints and window metrics. Clips never clamped are unchanged, so every row now reflects the unclamped pipeline.
+    pads = [pd.read_csv(p).assign(_dir=p.parent) for p in sorted(ROOT.glob("kaggle/chunks/pose-pad-c*/out/per_clip.csv"))]
+    idx["pose_rerun"] = False
+    if pads:
+        pad = pd.concat(pads, ignore_index=True).set_index("clip_id")
+        hit = idx.clip_id.isin(pad.index)
+        p = pad.loc[idx.loc[hit, "clip_id"]]
+        idx.loc[hit, "kps_path"] = [str((d / "kps" / f"{c}.npz").relative_to(ROOT)) for d, c in zip(p._dir, p.index)]
+        for col in ("found_in_window", "conf_in_window", "jitter", "usable"):
+            idx.loc[hit, col] = p[col].to_numpy()
+        idx.loc[hit, "pose_rerun"] = True
+        print(f"pose-pad: {int(hit.sum())} clips re-estimated without clamping")
     m = pd.read_parquet(ROOT / "data/processed/manifest.parquet")
     keep = ["clip_id", "shot", "side", "label_orig", "split", "group", "handedness", "foot",
             "score_head", "score_shoulder", "score_hands", "score_hips", "score_feet", "score_overall"]

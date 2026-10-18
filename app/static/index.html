@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CricLens · Batting analysis</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='14' fill='%23b42318'/><path d='M9 7c4 5 4 13 0 18M23 7c-4 5-4 13 0 18' stroke='white' stroke-width='1.6' fill='none' stroke-dasharray='2 2'/></svg>">
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="wrap topbar-inner">
+      <a class="brand" href="/" aria-label="CricLens home">
+        <svg class="logo" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="14"/><path d="M9 7c4 5 4 13 0 18M23 7c-4 5-4 13 0 18"/></svg>
+        <span class="brand-name">CricLens</span>
+        <span class="brand-tag">Batting analysis from one clip</span>
+      </a>
+      <div id="status" class="status status-loading" role="status"><span class="dot"></span><span id="status-text">Starting up…</span></div>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <!-- 1. pick a clip -->
+    <section id="view-input" class="view">
+      <div class="intro">
+        <h1>Analyse a batting shot</h1>
+        <p>Upload a short broadcast-style clip of one delivery. CricLens finds the batter, tracks their movement, identifies the shot, rates the technique and writes coaching feedback — all on this machine.</p>
+      </div>
+
+      <div class="input-grid">
+        <div class="card">
+          <h2 class="card-title">Upload a clip</h2>
+          <label id="dropzone" class="dropzone" tabindex="0">
+            <input id="file" type="file" accept="video/*" hidden>
+            <svg class="dz-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m0 0-4 4m4-4 4 4M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg>
+            <span class="dz-main">Drop a video here or <u>browse</u></span>
+            <span class="dz-sub">MP4, MOV, AVI · one delivery · up to 10 seconds</span>
+          </label>
+          <div id="file-chosen" class="file-chosen" hidden>
+            <video id="file-preview" muted playsinline loop></video>
+            <div class="file-meta"><strong id="file-name"></strong><span id="file-size"></span>
+              <button id="file-clear" class="link" type="button">Choose a different file</button></div>
+          </div>
+          <ul class="tips">
+            <li>Side-on or behind-the-bowler broadcast views work best.</li>
+            <li>Keep the batter in frame through the whole swing.</li>
+          </ul>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><h2 class="card-title">Or try a sample</h2><span class="muted small">From the project's test clips</span></div>
+          <div id="samples" class="samples"><p class="muted small">Loading samples…</p></div>
+        </div>
+      </div>
+
+      <div class="actions">
+        <p id="input-error" class="error" role="alert" hidden></p>
+        <button id="analyse" class="btn btn-primary" type="button" disabled>Analyse shot</button>
+      </div>
+    </section>
+
+    <!-- 2. progress -->
+    <section id="view-progress" class="view" hidden>
+      <div class="card progress-card">
+        <div class="progress-head">
+          <div><p class="eyebrow">Analysing</p><h2 id="progress-name" class="progress-name"></h2></div>
+          <span id="progress-pct" class="progress-pct">0%</span>
+        </div>
+        <div class="bar"><div id="progress-bar" class="bar-fill"></div></div>
+        <p id="progress-note" class="muted small">Usually one to two minutes on a laptop CPU.</p>
+        <ol id="steps" class="steps"></ol>
+        <p id="progress-error" class="error" role="alert" hidden></p>
+        <button id="progress-back" class="btn" type="button" hidden>Try another clip</button>
+      </div>
+    </section>
+
+    <!-- 3. results -->
+    <section id="view-results" class="view" hidden>
+      <div class="results-head">
+        <div><p class="eyebrow">Results</p><h1 id="res-name" class="res-name"></h1></div>
+        <button id="again" class="btn" type="button">Analyse another clip</button>
+      </div>
+      <div id="warnings"></div>
+
+      <div class="results-grid">
+        <article class="card media-card">
+          <video id="res-video" controls muted loop playsinline preload="auto"></video>
+          <div class="media-bar">
+            <div class="speed" role="group" aria-label="Playback speed">
+              <button type="button" data-speed="0.25">¼×</button>
+              <button type="button" data-speed="0.5" class="on">½×</button>
+              <button type="button" data-speed="1">1×</button>
+            </div>
+            <span class="legend"><i class="sw sw-win"></i>Analysed window <i class="sw sw-out"></i>Outside</span>
+          </div>
+          <div id="keyframes" class="keyframes"></div>
+        </article>
+
+        <div class="side-col">
+          <article class="card">
+            <p class="eyebrow">Shot</p>
+            <div class="shot-line"><h2 id="shot-name" class="shot-name"></h2><span id="shot-tag" class="tag"></span></div>
+            <div id="shot-probs" class="probs"></div>
+          </article>
+
+          <article class="card">
+            <div class="card-head"><p class="eyebrow">Technique</p>
+              <button class="info" type="button" aria-describedby="tech-tip">?</button>
+              <span id="tech-tip" role="tooltip" class="tip">Ratings come from a model trained on coaches' 0–10 scores (CricketVision). The five body-part ratings move together in that data, so treat the overall score as the main signal.</span>
+            </div>
+            <div class="tech">
+              <div class="ring"><svg viewBox="0 0 120 120"><circle class="ring-bg" cx="60" cy="60" r="52"/><circle id="ring-fg" class="ring-fg" cx="60" cy="60" r="52"/></svg>
+                <div class="ring-text"><strong id="tech-score"></strong><span>/ 10</span></div></div>
+              <p id="tech-pct" class="tech-pct"></p>
+            </div>
+            <div id="parts" class="parts"></div>
+          </article>
+        </div>
+
+        <article class="card metrics-card">
+          <p class="eyebrow">Movement</p>
+          <div id="metrics" class="metrics"></div>
+        </article>
+
+        <article class="card coach-card">
+          <div class="card-head"><p class="eyebrow">Coach's feedback</p><span id="coach-source" class="badge"></span></div>
+          <div id="coach-text" class="coach-text"></div>
+          <details class="based-on"><summary>What this is based on</summary><ul id="findings" class="findings"></ul></details>
+        </article>
+
+        <details class="card details-card">
+          <summary>Analysis details</summary>
+          <dl id="details" class="details"></dl>
+        </details>
+      </div>
+    </section>
+  </main>
+
+  <footer class="wrap footer muted small">
+    CricLens · Bennett University IMD + IVA project · Runs locally; nothing is uploaded to third parties.
+  </footer>
+  <script src="/static/app.js"></script>
+</body>
+</html>
