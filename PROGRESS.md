@@ -371,12 +371,30 @@ checked/built before chasing more hyperparameter tweaks (three of which already 
 
    Smoke-tested locally (`--epochs 2 --limit 200 --device cpu`): runs end-to-end, loss decreases, eval
    harness output shapes match the v2 script's, nothing crashes. Numbers from the smoke test itself are
-   meaningless (200 clips, 2 epochs, CPU) and weren't kept. **Needs a real run on Kaggle GPU** (full train
-   split, residual targets, same hyperparameter range as the v2 sweep) before any result can be reported
-   -- this is heavy compute and shouldn't run on the laptop per the hard rules above. No Kaggle job
-   folder exists yet for technique-scorer training specifically (earlier VAE/contrastive runs don't have
-   one checked into `kaggle/` either), so the next step is building one, since the existing `kaggle/<job>`
-   scripts are self-contained (no imports from `models/`) and this script currently isn't.
+   meaningless (200 clips, 2 epochs, CPU) and weren't kept.
+
+   **Kaggle GPU run, 3 seeds, same protocol as the v2 seed check (`kaggle/technique-scorer-partlocal/`,
+   self-contained since Kaggle kernels don't see `models/` -- resamples sequences on the fly from the raw
+   `kps.npz` chunks since `data/processed/sequences.parquet` turned out not to be part of
+   `criclens-processed.tgz.bin`, caught and fixed after the first push errored on a missing file):**
+
+   | | v2 (residual + contrastive, shared input, 3-seed mean) | v3 (+ part-local input, 3-seed mean) |
+   |---|---|---|
+   | mean Spearman | 0.595 | 0.564 +/- 0.016 |
+   | mean R-l2 | 2.51 | 2.71 +/- 0.11 |
+   | partial-rho vs overall | 0.137 | **0.090 +/- 0.005** |
+
+   **Negative result, consistently across all 3 seeds (tight std, not a lucky/unlucky draw): giving each
+   part head its own joint-only encoder made every metric worse, not better.** The hypothesis -- that the
+   model needs separate visual evidence per part, not just a separate *target* -- didn't hold in this
+   implementation. Plausible reasons, untested: each local encoder only sees 2-4 joints, which may simply
+   be too little signal on its own; and `diff_g` (the shared global context fed to part heads) was
+   deliberately `.detach()`-ed to keep gradient responsibilities clean, which may have cut off more useful
+   context than it isolated noise. Both are concrete things a follow-up could try (don't detach the global
+   context; widen the joint groups to overlap, e.g. give "hands" the shoulders too for arm-chain context)
+   but **not pursued further without review** -- this is now two architecture changes deep on what was
+   already a thin signal, and the honest standing result for the paper remains v2's 0.137, not an improved
+   number. Ceiling-check (inter-annotator agreement) stays ruled out per the entry above.
 
 ## Open decisions
 - Practice/nets/shadow-batting videos (no bowler or ball) are parked; focus is match clips for now.
