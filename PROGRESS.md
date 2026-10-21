@@ -343,5 +343,40 @@ above. The best result stands at seed 2 / plain-Spearman selection / 50 exemplar
 plain averaging: mean Spearman 0.595, R-l2 2.51, partial-rho 0.137 (vs VAE baseline's 0.601, 2.47,
 0.019).
 
+### Update 2026-10-21: where next on partial-rho -- ceiling check ruled out, part-local input built
+
+0.137 is a real, reproducible improvement over 0.019, but it's a thin signal in absolute terms, and a
+reviewer will ask "is this close to the best achievable, or is there more on the table?" Two things
+checked/built before chasing more hyperparameter tweaks (three of which already came back negative):
+
+1. **Tried to establish a ceiling first, via inter-annotator agreement -- ruled out.** If CricketVision's
+   own human raters wouldn't agree with each other on the part-specific residuals, no model could beat
+   that disagreement, and we'd know 0.137 is already close to the achievable ceiling. But per
+   `docs/DATASHEET.md`, the dataset's only "double-annotated" clips (`P3_V6` = `P4_V9` etc., 1,156
+   strokes) are copies of one rating (Spearman 0.98 between the two folders), not independent re-scores
+   -- so there is no usable inter-rater ceiling in this data. Can't check this without new annotation,
+   which is out of scope; proceeding on the model side instead.
+
+2. **Built the next concrete lever: part-localised pose input**, `models/train_technique_scorer_partlocal.py`.
+   The residual-target fix (above) changed what the model is asked to predict, but never changed what it's
+   *shown* -- one shared GRU still reads all 17 joints for every one of the 5 part heads, so even with a
+   fixed target, nothing stops that one encoding from being an equally poor source of part-specific
+   evidence for all 5. New architecture: the shared global GRU is unchanged and still drives the
+   overall-score head (same as v2's `ContrastiveScorer`), but each of the 5 part heads additionally gets
+   its own small Siamese GRU reading *only* that part's own COCO joint columns (hands head only ever sees
+   wrist+elbow columns, feet only knee+ankle, etc. -- see `JOINT_GROUPS` in the script), so each part head
+   has real, separate visual evidence instead of a slice of one shared full-body encoding. Always trains
+   on residual targets (that part of the fix stays); this isolates whether part-local *input* helps on top
+   of the already-settled target fix, not instead of it.
+
+   Smoke-tested locally (`--epochs 2 --limit 200 --device cpu`): runs end-to-end, loss decreases, eval
+   harness output shapes match the v2 script's, nothing crashes. Numbers from the smoke test itself are
+   meaningless (200 clips, 2 epochs, CPU) and weren't kept. **Needs a real run on Kaggle GPU** (full train
+   split, residual targets, same hyperparameter range as the v2 sweep) before any result can be reported
+   -- this is heavy compute and shouldn't run on the laptop per the hard rules above. No Kaggle job
+   folder exists yet for technique-scorer training specifically (earlier VAE/contrastive runs don't have
+   one checked into `kaggle/` either), so the next step is building one, since the existing `kaggle/<job>`
+   scripts are self-contained (no imports from `models/`) and this script currently isn't.
+
 ## Open decisions
 - Practice/nets/shadow-batting videos (no bowler or ball) are parked; focus is match clips for now.
