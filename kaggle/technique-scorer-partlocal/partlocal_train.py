@@ -11,8 +11,9 @@ scorer's seed check (PROGRESS.md 2026-10-17). Best known hyperparameters from th
 as the default here (lr=3e-4, hidden=128, patience=15); local_hidden=48 is new and untried, kept modest
 since each local encoder only has 2-10 input channels x 3 to encode.
 
-Inputs : shikkoustic/criclens-all (criclens-processed.tgz.bin -> data/processed/{pose_index,sequences}.parquet
-          + data/processed/sequences/<clip>.npz)
+Inputs : shikkoustic/criclens-all (criclens-processed.tgz.bin -> data/processed/pose_index.parquet +
+          kaggle/chunks/pose-*/out/kps/<clip>.npz; sequences are resampled on the fly, see resample_clip --
+          data/processed/sequences.parquet itself isn't part of the packed tarball)
 Outputs: summary_seed<k>.json (one per seed), summary_all.json (aggregate mean/std across seeds),
          partlocal_scorer_seed<k>.pt
 """
@@ -40,7 +41,8 @@ else:
     PROC = "/tmp/proc"
     os.makedirs(PROC, exist_ok=True)
     _tgz = glob.glob("/kaggle/input/**/criclens-processed.tgz.bin", recursive=True)[0]
-    subprocess.run(["tar", "-xzf", _tgz, "-C", PROC, "--wildcards", "data/processed/*"], check=True)
+    subprocess.run(["tar", "-xzf", _tgz, "-C", PROC, "--wildcards",
+                     "data/processed/*", "kaggle/chunks/pose-*/out/kps/*"], check=True)
 
 PARTS = ["head", "shoulder", "hands", "hips", "feet"]
 TARGETS = PARTS + ["overall"]
@@ -190,6 +192,35 @@ def format_report(d, title=""):
 
 # ---- data (models/train_shot_classifier.py normalise + train_technique_scorer_contrastive.py, copied) ----
 
+T_OUT = 32  # models/resample_sequences.py: covers the window-length distribution (p50=27, p90=36)
+
+
+def resample_clip(kps, window, fps, t_out=T_OUT):
+    """models/resample_sequences.py's resample_clip, copied verbatim: data/processed/sequences.parquet
+    (built by that local CPU script) isn't part of criclens-processed.tgz.bin -- only the raw per-clip
+    kps.npz chunks are -- so this kernel resamples on the fly instead of relying on the prebuilt parquet."""
+    lo, c, hi = (int(v) for v in window)
+    kw = kps[lo:hi + 1]
+    wf = len(kw)
+    if wf < 2:
+        return None
+    t_in = np.arange(wf) / fps
+    dur = t_in[-1]
+    if dur <= 0:
+        return None
+    tn_in = t_in / dur
+    tn_out = np.linspace(0.0, 1.0, t_out)
+    seq = np.full((t_out, 17, 3), np.nan, np.float32)
+    for j in range(17):
+        for ch in range(3):
+            v = kw[:, j, ch]
+            ok = np.isfinite(v)
+            if ok.sum() < 2:
+                continue
+            seq[:, j, ch] = np.interp(tn_out, tn_in[ok], v[ok])
+    return seq
+
+
 def normalise(seq):
     """seq: (T, 17, 3). Per-frame hip-centred, per-clip scale-normalised (x, y); confidence untouched."""
     xy = seq[:, :, :2]
@@ -218,20 +249,29 @@ def from_residual(y):
 
 def load_data(limit=None):
     idx = pd.read_parquet(f"{PROC}/data/processed/pose_index.parquet")
-    seq = pd.read_parquet(f"{PROC}/data/processed/sequences.parquet")
     score_cols = [f"score_{p}" for p in TARGETS]
     d = idx[idx.train_ready & idx.score_overall.notna() & (idx.shot != "other")][
-        ["clip_id", "split", "source", "handedness", "shot"] + score_cols]
-    d = d.merge(seq[["clip_id", "seq_path"]], on="clip_id")
+        ["clip_id", "split", "source", "handedness", "shot", "kps_path"] + score_cols]
     exemplars = pd.read_csv(io.StringIO(EXEMPLARS_CSV))
     d = d[~d.clip_id.isin(exemplars.clip_id)]
     limit = limit or (LIMIT or None)
     d = d.head(limit) if limit else d
-    return d.reset_index(drop=True), exemplars.reset_index(drop=True), idx, seq
+    return d.reset_index(drop=True), exemplars.reset_index(drop=True), idx, None
 
 
-def cache_sequences(clip_ids, seq_path_by_clip):
-    return {cid: normalise(np.load(f"{PROC}/{seq_path_by_clip[cid]}")["seq"]) for cid in clip_ids}
+def cache_sequences(clip_ids, kps_path_by_clip):
+    cache, failed = {}, []
+    for cid in clip_ids:
+        z = np.load(f"{PROC}/{kps_path_by_clip[cid]}")
+        seq = resample_clip(z["kps"], z["window"], float(z["fps"]))
+        if seq is None:
+            failed.append(cid)
+            continue
+        cache[cid] = normalise(seq)
+    if failed:
+        print(f"WARNING: {len(failed)} clips failed to resample (window too short/zero duration), "
+              f"dropped: {failed[:10]}{'...' if len(failed) > 10 else ''}", flush=True)
+    return cache, failed
 
 
 class PairDataset(Dataset):
@@ -390,16 +430,18 @@ def main():
     epochs = int(os.environ.get("CRICLENS_EPOCHS", "60"))
     seeds = [int(s) for s in os.environ.get("CRICLENS_SEEDS", "0,1,2").split(",")]
     print(f"device={device}  epochs={epochs}  seeds={seeds}", flush=True)
-    d, exemplars, _, _ = load_data()
+    d, exemplars, idx, _ = load_data()
     print(f"train={int((d.split=='train').sum())} val={int((d.split=='val').sum())} "
           f"test={int((d.split=='test').sum())}  exemplars={len(exemplars)}", flush=True)
-    all_clips = set(d.clip_id) | set(exemplars.clip_id)
-    seq_path_by_clip = {**dict(zip(d.clip_id, d.seq_path)),
+    kps_path_by_clip = {**dict(zip(d.clip_id, d.kps_path)),
                          **dict(zip(exemplars.clip_id,
-                                    pd.read_parquet(f"{PROC}/data/processed/sequences.parquet")
-                                    .set_index("clip_id").loc[exemplars.clip_id, "seq_path"]))}
-    cache = cache_sequences(all_clips, seq_path_by_clip)
-    print(f"cached {len(cache)} sequences", flush=True)
+                                    idx.set_index("clip_id").loc[exemplars.clip_id, "kps_path"]))}
+    cache, failed = cache_sequences(set(kps_path_by_clip), kps_path_by_clip)
+    print(f"cached {len(cache)} sequences ({len(failed)} failed)", flush=True)
+    if set(failed) & set(exemplars.clip_id):
+        print("WARNING: an exemplar failed to resample -- check kaggle/exemplars.csv", flush=True)
+    d = d[~d.clip_id.isin(failed)].reset_index(drop=True)
+    exemplars = exemplars[~exemplars.clip_id.isin(failed)].reset_index(drop=True)
 
     summaries = [run_one_seed(seed, d, exemplars, cache, device, epochs=epochs) for seed in seeds]
     agg = {
