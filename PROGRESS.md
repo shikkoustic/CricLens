@@ -396,5 +396,25 @@ checked/built before chasing more hyperparameter tweaks (three of which already 
    already a thin signal, and the honest standing result for the paper remains v2's 0.137, not an improved
    number. Ceiling-check (inter-annotator agreement) stays ruled out per the entry above.
 
+   **Follow-up tried: overlapping joint groups** (`train_technique_scorer_partlocal_overlap.py`,
+   `kaggle/technique-scorer-partlocal-overlap/`), testing explanation (a) above in isolation (explanation
+   (b), the detached global context, deliberately left unchanged). Each part's joint group widened to
+   include its biomechanical neighbours along the kinetic chain (e.g. "hands" = shoulders+elbows+wrists,
+   not just elbows+wrists), 6 joints per part instead of 2-4. 3-seed Kaggle result:
+
+   | | v2 (shared input) | v3 (disjoint joints) | v3b (overlapping joints) |
+   |---|---|---|---|
+   | mean Spearman | 0.595 | 0.564 +/- 0.016 | 0.560 +/- 0.008 |
+   | mean R-l2 | 2.51 | 2.71 +/- 0.11 | 2.69 +/- 0.05 |
+   | partial-rho vs overall | 0.137 | 0.090 +/- 0.005 | 0.092 +/- 0.003 |
+
+   **Still a negative result, and statistically indistinguishable from v3** (0.092 vs 0.090, well within
+   each other's std) -- widening the joint groups changed nothing. This rules out "too little signal per
+   part" as the explanation for v3's drop. The remaining untested explanation (detaching the shared global
+   context from part heads) is still open, but two architecture variants landing in the same place is
+   enough to stop here and write this up rather than try a third without review. **Standing best result
+   for the paper remains v2: residual targets + contrastive regression, shared (non-part-local) input,
+   partial-rho 0.137.**
+
 ## Open decisions
 - Practice/nets/shadow-batting videos (no bowler or ball) are parked; focus is match clips for now.
