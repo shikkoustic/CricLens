@@ -416,5 +416,44 @@ checked/built before chasing more hyperparameter tweaks (three of which already 
    for the paper remains v2: residual targets + contrastive regression, shared (non-part-local) input,
    partial-rho 0.137.**
 
+### Update 2026-10-24: encoder pretraining tried -- also negative
+
+Third lever tried (a different kind: data/representation, not architecture): pretrain the technique
+scorer's GRU encoder on the much bigger shot-classification task (16,460 `train_ready` clips, all 6
+sources -- `kaggle/shot-classifier-pretrain-gru/`, same `nn.GRU(51, 128, num_layers=2, dropout=0.2)` shape
+as `ContrastiveScorer.encoder`, so the state_dict loads with no surgery) before fine-tuning on the small
+~3,662-clip scored set with the settled v2 recipe. Rationale: the scorer has to learn "what does cricket
+motion look like" and "how do I score it" simultaneously from a small pool; a pretrained encoder arrives
+already knowing the former.
+
+Pretraining step: GRU shot classifier, all 8 shot types, test accuracy 0.772 / macro-F1 0.771 (healthy,
+in the same range as the LSTM/Transformer numbers from the original architecture comparison) -- the
+encoder itself trained fine.
+
+Fine-tuning step (`kaggle/technique-scorer-pretrained/`, both conditions x 3 seeds in one job for an
+apples-to-apples comparison under identical code/environment):
+
+| | baseline (random-init, same job) | pretrained |
+|---|---|---|
+| mean Spearman | 0.587 +/- 0.005 | 0.570 +/- 0.017 |
+| mean R-l2 | 2.56 +/- 0.05 | 2.61 +/- 0.06 |
+| partial-rho vs overall | 0.123 +/- 0.009 | **0.092 +/- 0.012** |
+
+(The baseline here, 0.587/0.123, lands close to but not identical to the earlier-reported v2 numbers --
+0.595/0.137 -- expected run-to-run noise; it confirms this job's control is a faithful re-creation of v2,
+not a broken comparison.)
+
+**Negative result: pretraining made every metric worse, not better.** Plausible cause, worth flagging
+for the writeup rather than re-testing blindly: a readout mismatch between the two tasks. The shot
+classifier reads the GRU by **mean-pooling across all 32 timesteps** (`RecurrentClassifier.forward`'s
+`out.mean(1)`); the technique scorer reads it by taking only the **final hidden state**
+(`ContrastiveScorer.embed`'s `h[-1]`). So the pretrained weights were optimised to produce a good
+*time-averaged* representation, which is not the same thing the scorer actually consumes -- a real
+architectural reason the transfer could hurt rather than help, not just "pretraining doesn't work here".
+A fixed version (e.g. retrain the classifier with a final-hidden-state readout, or have the scorer
+mean-pool too) is a legitimate follow-up, but **not run without review** -- three different levers
+(part-local disjoint, part-local overlapping, pretraining) have now come back negative in a row. Standing
+best result for the paper remains v2 (above): partial-rho 0.137.
+
 ## Open decisions
 - Practice/nets/shadow-batting videos (no bowler or ball) are parked; focus is match clips for now.
