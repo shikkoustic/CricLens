@@ -455,5 +455,27 @@ mean-pool too) is a legitimate follow-up, but **not run without review** -- thre
 (part-local disjoint, part-local overlapping, pretraining) have now come back negative in a row. Standing
 best result for the paper remains v2 (above): partial-rho 0.137.
 
+**Follow-up tried: fix the readout mismatch.** Retrained the GRU shot classifier with the readout changed
+to match `ContrastiveScorer.embed()` exactly -- final hidden state (`h[-1]`) instead of mean-pooling over
+all 32 timesteps. Pretraining step stayed healthy (test accuracy 0.780, macro-F1 0.777, basically
+unchanged from the mean-pool version's 0.772/0.771 -- the fix didn't cost classification quality). Same
+fine-tuning job re-run with the corrected encoder:
+
+| | pretrained, mean-pool readout (first attempt) | pretrained, final-hidden-state readout (fixed) | baseline (unchanged) |
+|---|---|---|---|
+| mean Spearman | 0.570 +/- 0.017 | 0.583 +/- 0.013 | 0.587 +/- 0.005 |
+| mean R-l2 | 2.61 +/- 0.06 | 2.61 +/- 0.10 | 2.56 +/- 0.05 |
+| partial-rho vs overall | 0.092 +/- 0.012 | **0.119 +/- 0.007** | **0.123 +/- 0.009** |
+
+**The fix closed almost all of the gap -- partial-rho went from clearly worse than baseline (0.092) to
+within baseline's noise band (0.119 vs 0.123 +/- 0.009; every metric's std ranges overlap).** This confirms
+the readout-mismatch diagnosis was real: that's most of why the first attempt hurt. But the corrected
+version is a **tie with baseline, not an improvement** -- pretraining no longer actively hurts, but it
+doesn't add anything measurable beyond what the small scored set already teaches the model on its own.
+Four levers tried now in this round (part-local disjoint, part-local overlapping, pretraining v1,
+pretraining v2): three clean negatives and one tie. **Standing best result for the paper remains v2:
+partial-rho 0.137**, and this round of exploration is being written up as the honest, documented search
+it was, rather than continuing to chase further variants without review.
+
 ## Open decisions
 - Practice/nets/shadow-batting videos (no bowler or ball) are parked; focus is match clips for now.
