@@ -124,8 +124,14 @@ class SeqDataset(Dataset):
 
 
 class RecurrentClassifier(nn.Module):
-    """Identical to models/train_shot_classifier.py's RecurrentClassifier(cell="gru") -- same shape as
-    ContrastiveScorer's encoder, so self.rnn's state_dict transfers directly."""
+    """Same GRU shape as models/train_shot_classifier.py's RecurrentClassifier(cell="gru") and as
+    ContrastiveScorer's encoder, so self.rnn's state_dict transfers directly -- but the READOUT is
+    deliberately changed from the original (mean-pool over all 32 timesteps) to final-hidden-state only
+    (h[-1]), to match exactly how ContrastiveScorer.embed() reads its own encoder. PROGRESS.md 2026-10-24:
+    the first pretraining attempt used the original mean-pool readout and came back negative; the
+    pretrained weights were shaped for a mean-pooled representation the scorer never actually uses, which
+    is a likely reason transfer hurt instead of helped. This fix makes the pretraining task read the
+    encoder exactly the way the downstream task will, so the weights are optimised for the right thing."""
 
     def __init__(self, in_dim, n_classes, hidden=128, layers=2):
         super().__init__()
@@ -133,8 +139,8 @@ class RecurrentClassifier(nn.Module):
         self.head = nn.Sequential(nn.LayerNorm(hidden), nn.Linear(hidden, n_classes))
 
     def forward(self, x):
-        out, *_ = self.rnn(x)
-        return self.head(out.mean(1))
+        _, h = self.rnn(x)
+        return self.head(h[-1])
 
 
 def spearman_free_eval(preds, trues, classes):
