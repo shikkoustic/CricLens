@@ -477,5 +477,49 @@ pretraining v2): three clean negatives and one tie. **Standing best result for t
 partial-rho 0.137**, and this round of exploration is being written up as the honest, documented search
 it was, rather than continuing to chase further variants without review.
 
+### Update 2026-10-26: ST-TR/Timesformer + NAFNet gating, on the shot classifier -- negative
+
+Following a supervisor meeting, tested the supervisor's suggestion: (a) Timesformer-style "divided"
+attention (separate temporal attention for "when" + spatial attention for "what pose") and (b) NAFNet's
+activation-free gate, plus an "adaptive"/learned version. Literature check before building: neither piece
+is novel alone -- divided spatial/temporal attention on skeleton data specifically is **ST-TR** (Plizzari
+et al., arXiv:2008.07404, 9-layer two-stream GCN-hybrid design tuned for NTU's ~56k clips); NAFNet's fixed
+gate is arXiv:2204.04676; the "adaptive" learned-gate idea is the established GLU/SwiGLU family (Shazeer,
+arXiv:2002.05202). Built a simplified, single-stream version (`models/train_shot_classifier_sttr.py`,
+`kaggle/shot-classifier-sttr-gate/`) with both gate types, deliberately on the **full shot-classification
+pool (~16,460 clips, all 6 sources)** rather than the small scored set, since the bigger architecture
+needs more data than the ~3,662-clip scoring task can offer.
+
+First (single-seed) run looked promising: adaptive gate 0.768 macro-F1 vs simple gate 0.759, both in the
+same range as existing architectures. **3-seed confirmation overturned this:**
+
+| | macro-F1 (3-seed) |
+|---|---|
+| LSTM (existing baseline) | 0.785 |
+| GRU (existing baseline) | 0.777 |
+| Transformer (existing baseline) | 0.766 |
+| ST-TR-style, simple gate | 0.755 +/- 0.003 |
+| ST-TR-style, adaptive gate | 0.754 +/- 0.010 |
+
+**Two negative findings.** (1) The adaptive-vs-simple gap was noise, not real -- 0.754 vs 0.755 is well
+within each other's std once properly seeded, exactly the kind of single-run illusion the project's own
+seed-variance protocol exists to catch. (2) The architecture underperforms all three existing baselines,
+including Transformer -- this specific simplified combination doesn't beat anything already built.
+
+**Operational note**, worth recording since it ate real time: the first 3-seed push hung for ~2h50m with
+no error signal and no way to inspect progress mid-run on Kaggle's side (`kaggle kernels output` returns
+nothing while a kernel is still running). Cancelled it (Kaggle's CLI has no separate stop command --
+`kaggle kernels delete` + re-push was the only way) and a fresh push completed normally in the expected
+~35-40 minutes, so it was very likely a stuck/queued session, not a bug in the code -- the same code,
+same data, ran to completion with sane timing the second time.
+
+Given this comes right after four negative/tied results on the technique-scoring side (2026-10-21 through
+2026-10-24), the honest read is that the "swap in a published architecture, see if it wins" line of
+search has not produced a win on either task so far. The interpretability-focused idea discussed but not
+yet built -- using this architecture's attention weights to check whether spatial attention concentrates
+on anatomically correct joints per body part, and whether temporal attention finds ball-bat contact
+unsupervised -- remains a more promising direction *if* pursued, since it doesn't depend on this
+architecture also having to win on raw accuracy; not started yet.
+
 ## Open decisions
 - Practice/nets/shadow-batting videos (no bowler or ball) are parked; focus is match clips for now.
