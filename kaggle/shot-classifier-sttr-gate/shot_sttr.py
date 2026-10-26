@@ -194,15 +194,10 @@ def classify_eval(preds, trues, classes):
     return acc, macro_f1, weighted_f1
 
 
-def run(gate, epochs, limit, device, batch_size=64, patience=6, lr=1e-3, seed=0):
+def run(gate, epochs, device, d, cache, classes, batch_size=64, patience=6, lr=1e-3, seed=0):
     torch.manual_seed(seed); np.random.seed(seed)
-    d = load_labelled_clips(limit)
-    classes = sorted(d.shot.unique())
-    cache, failed = cache_sequences(d)
-    d = d[~d.clip_id.isin(failed)]
     tr, va, te = (d[d.split == s] for s in ("train", "val", "test"))
-    print(f"[gate={gate}] train={len(tr)} val={len(va)} test={len(te)} classes={classes} "
-          f"({len(failed)} failed to resample)", flush=True)
+    print(f"[gate={gate}, seed={seed}] train={len(tr)} val={len(va)} test={len(te)}", flush=True)
 
     model = PoseSTTRClassifier(len(classes), gate=gate).to(device)
     opt = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=1e-4)
@@ -226,14 +221,14 @@ def run(gate, epochs, limit, device, batch_size=64, patience=6, lr=1e-3, seed=0)
             for xb, yb in dl_va:
                 preds += model(xb.to(device)).argmax(1).cpu().tolist(); trues += yb.tolist()
         acc, macro_f1, weighted_f1 = classify_eval(preds, trues, classes)
-        print(f"  [gate={gate}] epoch {ep+1}/{epochs}  train_loss={tot_loss/len(tr):.3f}  "
+        print(f"  [gate={gate}, seed={seed}] epoch {ep+1}/{epochs}  train_loss={tot_loss/len(tr):.3f}  "
               f"val_acc={acc:.3f}  val_macroF1={macro_f1:.3f}  ({time.time()-t0:.1f}s)", flush=True)
         if macro_f1 > best_f1:
             best_f1, best_state, bad = macro_f1, {k: v.cpu().clone() for k, v in model.state_dict().items()}, 0
         else:
             bad += 1
             if bad >= patience:
-                print(f"  [gate={gate}] early stop (no val macro-F1 improvement in {patience} epochs)", flush=True)
+                print(f"  [gate={gate}, seed={seed}] early stop (no val macro-F1 improvement in {patience} epochs)", flush=True)
                 break
 
     model.load_state_dict(best_state); model.eval()
@@ -242,27 +237,42 @@ def run(gate, epochs, limit, device, batch_size=64, patience=6, lr=1e-3, seed=0)
         for xb, yb in dl_te:
             preds += model(xb.to(device)).argmax(1).cpu().tolist(); trues += yb.tolist()
     acc, macro_f1, weighted_f1 = classify_eval(preds, trues, classes)
-    print(f"\n[gate={gate}] TEST  acc={acc:.3f}  macro_f1={macro_f1:.3f}  weighted_f1={weighted_f1:.3f}", flush=True)
+    print(f"\n[gate={gate}, seed={seed}] TEST  acc={acc:.3f}  macro_f1={macro_f1:.3f}  weighted_f1={weighted_f1:.3f}", flush=True)
 
-    torch.save(best_state, f"{OUT}/sttr_{gate}.pt")
-    return {"gate": gate, "best_val_macro_f1": best_f1, "test_accuracy": acc, "test_macro_f1": macro_f1,
-            "test_weighted_f1": weighted_f1, "n_train": len(tr), "n_val": len(va), "n_test": len(te),
-            "classes": classes}
+    torch.save(best_state, f"{OUT}/sttr_{gate}_seed{seed}.pt")
+    return {"gate": gate, "seed": seed, "best_val_macro_f1": best_f1, "test_accuracy": acc,
+            "test_macro_f1": macro_f1, "test_weighted_f1": weighted_f1,
+            "n_train": len(tr), "n_val": len(va), "n_test": len(te), "classes": classes}
 
 
 def main():
     device = "cuda" if torch.cuda.is_available() else "cpu"
     epochs = int(os.environ.get("CRICLENS_EPOCHS", "30"))
     gates = os.environ.get("CRICLENS_GATES", "simple,adaptive").split(",")
-    seed = int(os.environ.get("CRICLENS_SEED", "0"))
-    print(f"device={device}  epochs={epochs}  gates={gates}  seed={seed}", flush=True)
+    seeds = [int(s) for s in os.environ.get("CRICLENS_SEEDS", "0,1,2").split(",")]
+    print(f"device={device}  epochs={epochs}  gates={gates}  seeds={seeds}", flush=True)
 
-    summary = [run(g, epochs, None, device, seed=seed) for g in gates]
+    d_all = load_labelled_clips()
+    classes = sorted(d_all.shot.unique())
+    cache, failed = cache_sequences(d_all)
+    d_all = d_all[~d_all.clip_id.isin(failed)]
+    print(f"cached {len(cache)} sequences ({len(failed)} failed), classes={classes}", flush=True)
+
+    summary = [run(g, epochs, device, d_all, cache, classes, seed=s) for g in gates for s in seeds]
     json.dump(summary, open(f"{OUT}/summary.json", "w"), indent=2)
-    print("\n=== summary ===", flush=True)
-    for s in summary:
-        print(f"[{s['gate']}] val_macroF1={s['best_val_macro_f1']:.3f}  test_acc={s['test_accuracy']:.3f}  "
-              f"test_macroF1={s['test_macro_f1']:.3f}  test_weightedF1={s['test_weighted_f1']:.3f}", flush=True)
+
+    agg = {}
+    for g in gates:
+        rows = [s for s in summary if s["gate"] == g]
+        agg[g] = {"test_macro_f1": {"mean": float(np.mean([r["test_macro_f1"] for r in rows])),
+                                     "std": float(np.std([r["test_macro_f1"] for r in rows]))},
+                   "test_accuracy": {"mean": float(np.mean([r["test_accuracy"] for r in rows])),
+                                      "std": float(np.std([r["test_accuracy"] for r in rows]))}}
+    json.dump(agg, open(f"{OUT}/summary_agg.json", "w"), indent=2)
+    print("\n=== AGGREGATE (3 seeds per gate) ===", flush=True)
+    for g, a in agg.items():
+        print(f"[{g}] test_macroF1={a['test_macro_f1']['mean']:.3f} +/- {a['test_macro_f1']['std']:.3f}  "
+              f"test_acc={a['test_accuracy']['mean']:.3f} +/- {a['test_accuracy']['std']:.3f}", flush=True)
     print("\nreference (existing architecture comparison): LSTM macro-F1 ~0.785, Transformer ~0.766, "
           "GRU (final-hidden readout) 0.777", flush=True)
 

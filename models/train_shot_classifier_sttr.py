@@ -213,16 +213,11 @@ class PoseSTTRClassifier(nn.Module):
         return self.head(h)
 
 
-def run(gate: str, epochs: int, limit: int | None, device: str, batch_size: int = 64, patience: int = 6,
-        lr: float = 1e-3, seed: int = 0) -> dict:
+def run(gate: str, epochs: int, device: str, d: pd.DataFrame, cache: dict, classes: list[str],
+        batch_size: int = 64, patience: int = 6, lr: float = 1e-3, seed: int = 0) -> dict:
     torch.manual_seed(seed); np.random.seed(seed)
-    d = load_labelled_sequences(limit)
-    classes = sorted(d.shot.unique())
-    cache, failed = cache_sequences(d)
-    d = d[~d.clip_id.isin(failed)]
     tr, va, te = (d[d.split == s] for s in ("train", "val", "test"))
-    print(f"[gate={gate}] train={len(tr)} val={len(va)} test={len(te)} classes={classes} "
-          f"({len(failed)} failed to resample)")
+    print(f"[gate={gate}, seed={seed}] train={len(tr)} val={len(va)} test={len(te)}")
 
     model = PoseSTTRClassifier(len(classes), gate=gate).to(device)
     opt = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=1e-4)
@@ -247,14 +242,14 @@ def run(gate: str, epochs: int, limit: int | None, device: str, batch_size: int 
                 preds += model(xb.to(device)).argmax(1).cpu().tolist(); trues += yb.tolist()
         vr = evaluate_classification(pd.DataFrame({"y": [classes[i] for i in trues],
                                                      "p": [classes[i] for i in preds]}), "y", "p")
-        print(f"  [gate={gate}] epoch {ep+1}/{epochs}  train_loss={tot_loss/len(tr):.3f}  "
+        print(f"  [gate={gate}, seed={seed}] epoch {ep+1}/{epochs}  train_loss={tot_loss/len(tr):.3f}  "
               f"val_acc={vr['accuracy']:.3f}  val_macroF1={vr['macro_f1']:.3f}  ({time.time()-t0:.1f}s)")
         if vr["macro_f1"] > best_f1:
             best_f1, best_state, bad_epochs = vr["macro_f1"], {k: v.cpu().clone() for k, v in model.state_dict().items()}, 0
         else:
             bad_epochs += 1
             if bad_epochs >= patience:
-                print(f"  [gate={gate}] early stop (no val macro-F1 improvement in {patience} epochs)"); break
+                print(f"  [gate={gate}, seed={seed}] early stop (no val macro-F1 improvement in {patience} epochs)"); break
 
     model.load_state_dict(best_state); model.eval()
     preds, trues = [], []
@@ -265,9 +260,9 @@ def run(gate: str, epochs: int, limit: int | None, device: str, batch_size: int 
     result = evaluate_classification(te_r.assign(y=[classes[i] for i in trues]), "y", "pred", by="source")
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    torch.save(best_state, OUT_DIR / f"sttr_{gate}.pt")
-    print(format_report(result, f"\n[gate={gate}] TEST"))
-    return {"gate": gate, "best_val_macro_f1": best_f1, "test_accuracy": result["accuracy"],
+    torch.save(best_state, OUT_DIR / f"sttr_{gate}_seed{seed}.pt")
+    print(format_report(result, f"\n[gate={gate}, seed={seed}] TEST"))
+    return {"gate": gate, "seed": seed, "best_val_macro_f1": best_f1, "test_accuracy": result["accuracy"],
             "test_macro_f1": result["macro_f1"], "test_weighted_f1": result["weighted_f1"],
             "n_train": len(tr), "n_val": len(va), "n_test": len(te), "classes": classes}
 
@@ -278,14 +273,22 @@ def main():
     ap.add_argument("--epochs", type=int, default=30)
     ap.add_argument("--limit", type=int, default=None)
     ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
-    ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--seeds", default="0,1,2")
     args = ap.parse_args()
     gates = ["simple", "adaptive"] if args.gate == "both" else [args.gate]
-    summary = [run(g, args.epochs, args.limit, args.device, seed=args.seed) for g in gates]
+    seeds = [int(s) for s in args.seeds.split(",")]
+
+    d = load_labelled_sequences(args.limit)
+    classes = sorted(d.shot.unique())
+    cache, failed = cache_sequences(d)
+    d = d[~d.clip_id.isin(failed)]
+    print(f"cached {len(cache)} sequences ({len(failed)} failed), classes={classes}")
+
+    summary = [run(g, args.epochs, args.device, d, cache, classes, seed=s) for g in gates for s in seeds]
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     json.dump(summary, open(OUT_DIR / "summary.json", "w"), indent=2)
     print("\n=== summary ===")
-    print(pd.DataFrame(summary)[["gate", "best_val_macro_f1", "test_accuracy", "test_macro_f1", "test_weighted_f1"]]
+    print(pd.DataFrame(summary)[["gate", "seed", "best_val_macro_f1", "test_accuracy", "test_macro_f1", "test_weighted_f1"]]
           .to_string(index=False))
     print("\nreference (existing architecture comparison, docs/paper/results_phase3.md): "
           "LSTM macro-F1 ~0.785, Transformer ~0.766, GRU (final-hidden readout) 0.777")
