@@ -18,18 +18,13 @@
         <a href="/">Home</a>
         <a href="/analyze" class="on" aria-current="page">Analyse</a>
       </nav>
-      <div id="status" class="status status-loading" role="status"><span class="dot"></span><span id="status-text">Starting up…</span></div>
+      <div id="status" class="status status-loading" role="status" hidden><span class="dot"></span><span id="status-text"></span></div>
     </div>
   </header>
 
   <main class="wrap">
     <!-- 1. pick a clip -->
     <section id="view-input" class="view">
-      <div class="intro">
-        <h1>Analyse a batting shot</h1>
-        <p>Upload a short broadcast-style clip of one delivery. CricLens finds the batter, tracks their movement, identifies the shot, rates the technique and writes coaching feedback — all on this machine.</p>
-      </div>
-
       <div class="input-grid">
         <div class="card">
           <h2 class="card-title">Upload a clip</h2>
@@ -51,7 +46,7 @@
         </div>
 
         <div class="card">
-          <div class="card-head"><h2 class="card-title">Or try a sample</h2><span class="muted small">From the project's test clips</span></div>
+          <div class="card-head"><h2 class="card-title">Or try a sample</h2><span class="muted small">Held-out clips</span></div>
           <div id="samples" class="samples"><p class="muted small">Loading samples…</p></div>
         </div>
       </div>
@@ -70,7 +65,7 @@
           <span id="progress-pct" class="progress-pct">0%</span>
         </div>
         <div class="bar"><div id="progress-bar" class="bar-fill"></div></div>
-        <p id="progress-note" class="muted small">Usually one to two minutes on a laptop CPU.</p>
+        <p id="progress-note" class="muted small" hidden></p>
         <ol id="steps" class="steps"></ol>
         <p id="progress-error" class="error" role="alert" hidden></p>
         <button id="progress-back" class="btn" type="button" hidden>Try another clip</button>
@@ -96,6 +91,14 @@
             </div>
             <span class="legend"><i class="sw sw-win"></i>Analysed window <i class="sw sw-out"></i>Outside</span>
           </div>
+          <div class="timeline">
+            <div id="tl-track" class="tl-track" role="slider" tabindex="0" aria-label="Clip timeline"
+                 aria-valuemin="0" aria-valuenow="0">
+              <div id="tl-window" class="tl-window"></div>
+              <div id="tl-head" class="tl-head"></div>
+            </div>
+            <div id="tl-marks" class="tl-marks"></div>
+          </div>
           <div id="keyframes" class="keyframes"></div>
         </article>
 
@@ -112,7 +115,7 @@
               <span id="tech-tip" role="tooltip" class="tip">Ratings come from a model trained on coaches' 0–10 scores (CricketVision). The five body-part ratings move together in that data, so treat the overall score as the main signal.</span>
             </div>
             <div class="tech">
-              <div class="ring"><svg viewBox="0 0 120 120"><circle class="ring-bg" cx="60" cy="60" r="52"/><circle id="ring-fg" class="ring-fg" cx="60" cy="60" r="52"/></svg>
+              <div class="ring"><svg viewBox="0 0 120 120"><circle class="ring-bg" cx="60" cy="60" r="52"/><circle id="ring-fg" class="ring-fg" cx="60" cy="60" r="52"/><path class="ring-seam" d="M26 26c14 16 14 52 0 68"/><path class="ring-seam" d="M94 26c-14 16-14 52 0 68"/></svg>
                 <div class="ring-text"><strong id="tech-score"></strong><span>/ 10</span></div></div>
               <p id="tech-pct" class="tech-pct"></p>
             </div>
@@ -139,9 +142,6 @@
     </section>
   </main>
 
-  <footer class="wrap footer muted small">
-    CricLens · Bennett University IMD + IVA project · Runs locally; nothing is uploaded to third parties.
-  </footer>
   <script src="/static/app.js"></script>
 </body>
 </html>

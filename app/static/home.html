@@ -3,12 +3,12 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>CricLens · AI batting analysis</title>
-  <meta name="description" content="Upload one delivery. CricLens finds the batter, classifies the shot, scores the technique and writes coaching feedback — all on your own machine.">
+  <title>CricLens · Batting analysis</title>
+  <meta name="description" content="Batting analysis from a single delivery: find the batter, track the joints, name the shot, score the technique.">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='14' fill='%23b42318'/><path d='M9 7c4 5 4 13 0 18M23 7c-4 5-4 13 0 18' stroke='white' stroke-width='1.6' fill='none' stroke-dasharray='2 2'/></svg>">
   <link rel="stylesheet" href="/static/styles.css">
 </head>
-<body>
+<body class="home">
   <header class="topbar">
     <div class="wrap topbar-inner">
       <a class="brand" href="/" aria-label="CricLens home">
@@ -19,137 +19,73 @@
         <a href="/" class="on" aria-current="page">Home</a>
         <a href="/analyze">Analyse</a>
       </nav>
-      <div id="status" class="status status-loading" role="status"><span class="dot"></span><span id="status-text">Starting up…</span></div>
+      <div id="status" class="status status-loading" role="status" hidden><span class="dot"></span><span id="status-text"></span></div>
     </div>
   </header>
 
   <main>
-    <!-- hero -->
+    <!-- hero: one delivery, playing behind the headline -->
     <section class="hero">
+      <div class="hero-media" aria-hidden="true">
+        <video id="hero-video" muted loop playsinline preload="auto"></video>
+        <div class="hero-scrim"></div>
+        <div class="hero-grass"></div>
+      </div>
       <div class="wrap hero-inner">
-        <div class="hero-copy">
-          <p class="eyebrow">Pose-based batting analysis</p>
-          <h1>See your batting technique the way a coach would.</h1>
-          <p class="hero-sub">Upload one delivery and CricLens finds the batter, tracks every joint through the
-            shot, identifies which stroke it was, scores the technique part by part and writes coaching
-            feedback — all from a single broadcast-style clip, running entirely on this machine.</p>
-          <div class="hero-actions">
-            <a class="btn btn-primary btn-lg" href="/analyze">Analyse a clip →</a>
-            <a class="btn btn-lg" href="#how">See how it works</a>
-          </div>
-          <ul class="hero-trust">
-            <li>Runs locally — clips never leave this machine</li>
-            <li>Built on a de-duplicated, leakage-checked dataset</li>
-          </ul>
+        <h1 class="hero-title">
+          <span class="line">One delivery.</span>
+          <span class="line accent">Read frame by frame.</span>
+        </h1>
+        <p class="hero-sub">CricLens finds the striker, tracks every joint through the shot, names the stroke and scores the technique.</p>
+        <div class="hero-actions">
+          <a class="btn btn-primary btn-lg" href="/analyze">Analyse a clip</a>
         </div>
-        <div class="hero-visual" aria-hidden="true">
-          <svg viewBox="0 0 360 320" class="pose-art">
-            <defs>
-              <linearGradient id="g1" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0" stop-color="var(--accent)" stop-opacity=".22"/>
-                <stop offset="1" stop-color="var(--accent)" stop-opacity="0"/>
-              </linearGradient>
-            </defs>
-            <rect x="18" y="18" width="324" height="284" rx="18" fill="url(#g1)"/>
-            <g stroke="var(--accent)" stroke-width="3" stroke-linecap="round" fill="none" opacity=".9">
-              <path d="M180 70 L180 150"/>
-              <path d="M180 150 L140 190"/>
-              <path d="M180 150 L235 175"/>
-              <path d="M180 185 L150 260"/>
-              <path d="M180 185 L212 255"/>
-              <path d="M180 100 L130 120"/>
-              <path d="M180 100 L242 108"/>
-            </g>
-            <g fill="var(--win)">
-              <circle cx="180" cy="70" r="11"/>
-            </g>
-            <g fill="var(--accent)">
-              <circle cx="180" cy="150" r="5"/><circle cx="180" cy="185" r="5"/>
-              <circle cx="140" cy="190" r="5"/><circle cx="235" cy="175" r="5"/>
-              <circle cx="150" cy="260" r="5"/><circle cx="212" cy="255" r="5"/>
-              <circle cx="130" cy="120" r="5"/><circle cx="242" cy="108" r="5"/>
-            </g>
-            <circle cx="268" cy="98" r="6" fill="var(--ball)"/>
-            <path d="M268 98 L250 100" stroke="var(--ball)" stroke-width="2" stroke-dasharray="3 4" fill="none"/>
-          </svg>
+      </div>
+      <div class="seam" aria-hidden="true"></div>
+    </section>
+
+    <!-- the delivery, as a timeline down the pitch -->
+    <section id="how" class="wrap section reveal">
+      <h2 class="section-title">From release to follow-through</h2>
+      <div class="pitch">
+        <div class="pitch-strip" aria-hidden="true"><span class="crease c1"></span><span class="crease c2"></span><i class="travel-ball"></i></div>
+        <ol class="overs">
+          <li><b>Find the striker</b><span>Picked out of the bowler, keeper and fielders.</span></li>
+          <li><b>Track the joints</b><span>17 points, backswing through follow-through.</span></li>
+          <li><b>Name the shot</b><span>Eight strokes, with a confidence.</span></li>
+          <li><b>Score &amp; coach</b><span>Technique rated, feedback written.</span></li>
+        </ol>
+      </div>
+    </section>
+
+    <!-- what it was built on -->
+    <section class="scoreboard-wrap reveal">
+      <div class="wrap">
+        <div class="scoreboard">
+          <div class="sb"><b>22,420</b><span>clips</span></div>
+          <div class="sb"><b>6</b><span>sources</span></div>
+          <div class="sb"><b>8</b><span>strokes</span></div>
+          <div class="sb"><b>0.785</b><span>macro-F1</span></div>
+          <div class="sb"><b>0.603</b><span>Spearman</span></div>
         </div>
       </div>
     </section>
 
-    <!-- how it works -->
-    <section id="how" class="wrap section">
-      <div class="section-head">
-        <p class="eyebrow">How it works</p>
-        <h2>One clip, four steps, under two minutes.</h2>
-      </div>
-      <ol class="flow">
-        <li><span class="flow-n">1</span><h3>Find the batter</h3><p>A trained detector picks the striker out of the frame — not the bowler, keeper or a fielder — even in a crowded broadcast shot.</p></li>
-        <li><span class="flow-n">2</span><h3>Track the pose</h3><p>Body joints are tracked frame by frame through the backswing, contact and follow-through, anchored on the moment of bat-ball contact.</p></li>
-        <li><span class="flow-n">3</span><h3>Classify &amp; score</h3><p>A sequence model names the shot; a second model rates technique across five body parts plus an overall score.</p></li>
-        <li><span class="flow-n">4</span><h3>Get feedback</h3><p>Stride length and hand speed are measured where the footage allows, and the findings are written up as plain-language coaching notes.</p></li>
-      </ol>
-    </section>
-
-    <!-- what you get -->
-    <section class="section-alt">
-      <div class="wrap section">
-        <div class="section-head">
-          <p class="eyebrow">What you get</p>
-          <h2>A full read on one delivery.</h2>
-        </div>
-        <div class="feature-grid">
-          <article class="feature-card">
-            <div class="feature-ico" data-ico="shot"></div>
-            <h3>Shot classification</h3>
-            <p>Identifies the stroke — drive, cut, pull/hook, sweep and more — with a confidence score, not just a guess.</p>
-          </article>
-          <article class="feature-card">
-            <div class="feature-ico" data-ico="score"></div>
-            <h3>Technique scoring</h3>
-            <p>An overall rating plus a per-body-part breakdown (head, shoulders, hands, hips, feet), benchmarked against a coached reference set.</p>
-          </article>
-          <article class="feature-card">
-            <div class="feature-ico" data-ico="metric"></div>
-            <h3>Movement metrics</h3>
-            <p>Stride length and peak hand speed, measured directly from the footage when the crease or stumps are visible enough to calibrate.</p>
-          </article>
-          <article class="feature-card">
-            <div class="feature-ico" data-ico="coach"></div>
-            <h3>Coaching feedback</h3>
-            <p>The measured findings are turned into a short, plain-language write-up — what worked, what to work on, and why.</p>
-          </article>
-        </div>
-      </div>
-    </section>
-
-    <!-- honesty -->
-    <section class="wrap section">
+    <!-- limits -->
+    <section class="wrap section reveal">
       <div class="honest-card">
-        <div class="honest-copy">
-          <p class="eyebrow">Built to be honest about its limits</p>
-          <h2>We'd rather tell you what the numbers can and can't say.</h2>
-          <p>The five body-part scores are trained on a coached reference dataset where they move together more
-            than five truly independent ratings should — so treat the overall score as the main signal and the
-            per-part breakdown as a secondary read, not five separate verdicts. Every clip shown here is held out
-            from the data the models were trained on, so you're seeing how they generalise, not memorised answers.</p>
-          <a class="link" href="/analyze">Try it on a sample clip →</a>
-        </div>
+        <h2 class="section-title">What the numbers can't say</h2>
+        <p>The five body-part ratings come from a coached dataset where they move together far more than
+          five independent judgements would. Read the overall score as the signal and the breakdown as
+          a secondary view. Every sample clip here is held out from training.</p>
       </div>
     </section>
 
-    <!-- cta -->
-    <section class="wrap section cta-section">
-      <div class="cta-card">
-        <h2>Ready to see your shot analysed?</h2>
-        <p>Upload your own delivery, or pick one of the held-out sample clips to see CricLens in action straight away.</p>
-        <a class="btn btn-primary btn-lg" href="/analyze">Analyse a clip →</a>
-      </div>
+    <section class="wrap section cta-section reveal">
+      <a class="btn btn-primary btn-lg" href="/analyze">Analyse a clip</a>
     </section>
   </main>
 
-  <footer class="wrap footer muted small">
-    CricLens · Bennett University IMD + IVA project · Runs locally; nothing is uploaded to third parties.
-  </footer>
   <script src="/static/home.js"></script>
 </body>
 </html>

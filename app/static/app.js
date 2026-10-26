@@ -20,15 +20,14 @@ async function pollHealth() {
     const h = await (await fetch("/api/health")).json();
     stages = h.stages;
     const s = $("status");
-    if (h.error) { s.className = "status status-error"; $("status-text").textContent = "Models failed to load"; return; }
-    if (h.ready) {
-      s.className = "status status-ready";
-      $("status-text").textContent = h.llm ? `Ready · coach: ${h.llm}` : "Ready";
-      return;
-    }
+    // Only worth showing while something is wrong or still loading; once the models are up the
+    // pill is noise, and which model writes the feedback is not the viewer's problem.
+    if (h.error) { s.hidden = false; s.className = "status status-error"; $("status-text").textContent = "Models failed to load"; return; }
+    if (h.ready) { s.hidden = true; return; }
+    s.hidden = false;
     s.className = "status status-loading";
-    $("status-text").textContent = `Warming up: ${h.stage}…`;
-  } catch { $("status-text").textContent = "Connecting…"; }
+    $("status-text").textContent = "Warming up…";
+  } catch { /* server still starting */ }
   setTimeout(pollHealth, 1500);
 }
 
@@ -69,9 +68,9 @@ async function loadSamples() {
       const b = el("button", "sample"); b.type = "button"; b.dataset.id = s.id;
       const img = el("img"); img.src = s.thumb; img.alt = ""; img.loading = "lazy";
       const cap = el("span", "cap");
-      cap.append(el("b", null, s.label ? labelName(s.label) : "Clip"), el("span", "muted", s.source));
+      cap.append(el("b", null, s.label ? labelName(s.label) : "Clip"));
       b.append(img, cap, el("span", "check", "✓"));
-      b.title = "Dataset label: " + (s.label ? labelName(s.label) : "unknown");
+      b.title = s.label ? labelName(s.label) : "Clip";
       b.onclick = () => setChoice({ kind: "sample", id: s.id, label: s.label, source: s.source });
       box.append(b);
     }
@@ -93,7 +92,7 @@ async function startAnalysis() {
     }
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail || "Upload failed");
-    beginProgress(data.job_id, choice.kind === "file" ? choice.file.name : `Sample clip (${choice.source})`);
+    beginProgress(data.job_id, choice.kind === "file" ? choice.file.name : (choice.label ? labelName(choice.label) : "Sample clip"));
   } catch (e) {
     $("input-error").textContent = e.message; $("input-error").hidden = false; $("analyse").disabled = false;
   }
@@ -128,9 +127,11 @@ function setProgress(stage, frac, status, queuePos) {
   });
   $("progress-bar").style.width = pct(frac);
   $("progress-pct").textContent = pct(frac);
-  $("progress-note").textContent = status === "queued"
+  const note = $("progress-note");
+  note.textContent = status === "queued"
     ? (queuePos > 1 ? `Waiting in line (position ${queuePos})…` : "Waiting for the models to finish loading…")
-    : "Usually one to two minutes on a laptop CPU.";
+    : "";
+  note.hidden = !note.textContent;
 }
 
 function failProgress(msg) {
@@ -151,6 +152,8 @@ function renderResults(jobId, name, r) {
   const v = $("res-video");
   v.src = media(r.media.video);
   v.onloadedmetadata = () => { v.playbackRate = currentSpeed(); v.play().catch(() => {}); };
+  renderTimeline(v, r);
+
   const kf = $("keyframes"); kf.textContent = "";
   for (const k of r.media.keyframes) {
     const b = el("button", "kf"); b.type = "button";
@@ -196,6 +199,46 @@ function renderResults(jobId, name, r) {
   renderCoach(r.coach);
   renderDetails(r);
   show("view-results");
+}
+
+// The clip as a strip: the analysed window is lit, the three phases are marked, and the playhead
+// follows the video. Clicking or arrowing the track scrubs — quicker than dragging the native bar.
+function renderTimeline(video, r) {
+  const dur = r.video.seconds || 0;
+  const w = r.batter.window;
+  const track = $("tl-track"), win = $("tl-window"), head = $("tl-head"), marks = $("tl-marks");
+  if (!dur) { track.parentElement.hidden = true; return; }
+  track.parentElement.hidden = false;
+  const at = (t) => `${Math.min(100, Math.max(0, (t / dur) * 100))}%`;
+
+  win.style.left = at(w.start_s);
+  win.style.width = `${Math.max(0, ((w.end_s - w.start_s) / dur) * 100)}%`;
+
+  marks.textContent = "";
+  for (const k of r.media.keyframes) {
+    const m = el("button", "tl-mark" + (/contact/i.test(k.label) ? " contact" : ""));
+    m.type = "button";
+    m.style.left = at(k.time_s);
+    m.title = `${k.label} · ${k.time_s.toFixed(2)}s`;
+    m.append(el("i"), el("span", null, k.label));
+    m.onclick = (e) => { e.stopPropagation(); video.pause(); video.currentTime = k.time_s + 0.001; };
+    marks.append(m);
+  }
+
+  const seek = (clientX) => {
+    const b = track.getBoundingClientRect();
+    video.currentTime = Math.min(dur - 0.01, Math.max(0, ((clientX - b.left) / b.width) * dur));
+  };
+  track.onclick = (e) => seek(e.clientX);
+  track.onkeydown = (e) => {
+    const step = e.shiftKey ? 0.5 : 0.1;
+    if (e.key === "ArrowRight") { video.currentTime = Math.min(dur, video.currentTime + step); e.preventDefault(); }
+    if (e.key === "ArrowLeft") { video.currentTime = Math.max(0, video.currentTime - step); e.preventDefault(); }
+  };
+  video.ontimeupdate = () => {
+    head.style.left = at(video.currentTime);
+    track.setAttribute("aria-valuenow", video.currentTime.toFixed(2));
+  };
 }
 
 function renderMetrics(m) {
