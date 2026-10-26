@@ -48,7 +48,7 @@ from transformers import TimesformerForVideoClassification
 OUT = os.environ.get("CRICLENS_OUT", "/kaggle/working")
 LOCAL = os.environ.get("CRICLENS_LOCAL")
 LOCAL_CLIPS = os.environ.get("CRICLENS_LOCAL_CLIPS")  # dir containing <source>/<clip_id>.mp4, for smoke tests
-LIMIT = int(os.environ.get("CRICLENS_LIMIT", "0"))
+LIMIT = int(os.environ.get("CRICLENS_LIMIT", "300"))  # small-subset validation run; raise once confirmed
 os.makedirs(OUT, exist_ok=True)
 if LOCAL:
     PROC = LOCAL
@@ -266,7 +266,7 @@ def run(gate, epochs, device, d, cache, classes, batch_size=4, patience=4, lr=5e
 
 def main():
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    epochs = int(os.environ.get("CRICLENS_EPOCHS", "10"))
+    epochs = int(os.environ.get("CRICLENS_EPOCHS", "5"))  # small-subset validation run; raise once confirmed
     gates = os.environ.get("CRICLENS_GATES", "none,adaptive").split(",")
     seed = int(os.environ.get("CRICLENS_SEED", "0"))
     print(f"device={device}  epochs={epochs}  gates={gates}  seed={seed}", flush=True)
