@@ -287,15 +287,19 @@ def run(gate, epochs, device, d, cache, classes, batch_size=8, patience=3, lr=1e
             opt.zero_grad()
             with torch.amp.autocast("cuda", enabled=amp):
                 loss = crit(model(pixel_values=xb).logits, yb)
-            scaler.scale(loss).backward(); scaler.step(opt); scaler.update()
+            scaler.scale(loss).backward()
+            scaler.unscale_(opt)  # needed before clipping -- grads are still fp16-scaled otherwise
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+            scaler.step(opt); scaler.update()
             tot_loss += loss.item() * len(yb)
         model.eval(); preds, trues = [], []
         with torch.no_grad(), torch.amp.autocast("cuda", enabled=amp):
             for xb, yb in dl_va:
                 preds += model(pixel_values=xb.to(device)).logits.argmax(1).cpu().tolist(); trues += yb.tolist()
         acc, macro_f1, weighted_f1 = classify_eval(preds, trues, len(classes))
+        scale_note = f"  amp_scale={scaler.get_scale():.0f}" if amp else ""
         print(f"  [gate={gate}, seed={seed}] epoch {ep+1}/{epochs}  train_loss={tot_loss/len(tr):.3f}  "
-              f"val_acc={acc:.3f}  val_macroF1={macro_f1:.3f}  ({time.time()-t0:.1f}s)", flush=True)
+              f"val_acc={acc:.3f}  val_macroF1={macro_f1:.3f}  ({time.time()-t0:.1f}s){scale_note}", flush=True)
         if macro_f1 > best_f1:
             best_f1, best_state, bad = macro_f1, {k: v.cpu().clone() for k, v in model.state_dict().items()}, 0
         else:
