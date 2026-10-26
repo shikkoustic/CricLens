@@ -521,5 +521,64 @@ on anatomically correct joints per body part, and whether temporal attention fin
 unsupervised -- remains a more promising direction *if* pursued, since it doesn't depend on this
 architecture also having to win on raw accuracy; not started yet.
 
+### Update 2026-10-26: real video + pretrained Timesformer -- promising, scaling to the full pool
+
+The pose-domain ST-TR+gate result above came back negative, but the supervisor's actual ask was to try
+Timesformer on **real video**, not a pose-domain adaptation of the same idea -- pose data throws away the
+pixel information a pretrained video transformer is built to use. Built `kaggle/shot-classifier-timesformer/`:
+raw frames (8 per clip, sampled across the pose pipeline's ball-release-to-follow-through window, cropped
+to the tracked batter box with 12% padding) through Facebook's Kinetics-400-pretrained Timesformer
+(`facebook/timesformer-base-finetuned-k400`), with each block's feed-forward sublayer optionally replaced
+by a gated version (`none` = original pretrained GELU feed-forward, control; `adaptive` = SwiGLU-style
+learned gate, warm-started -- see below).
+
+**Three bugs hit and fixed, each verified before trusting it, not just assumed fixed:**
+1. *Occlusion edge case*: some frames have no valid tracked batter box (low confidence/occlusion) --
+   fixed by falling back to the nearest frame (by index) that does have one; caught via a smoke test
+   against real downloaded clips, not found in CI.
+2. *Unverified warm-start*: naively swapping in a fresh gated feed-forward discards that layer's pretrained
+   weights, so it has to relearn 12 layers of feed-forward transform from scratch -- on a small subset the
+   loss barely moved while the pretrained control dropped sharply. Fix: initialize the adaptive gate's two
+   branches both from the pretrained dense layer, which reduces the formula to `SiLU(dense(x))`, a close
+   stand-in for the original `GELU(dense(x))` -- checked directly against the real pretrained layer's
+   output on random input (8% mean relative error, 0.998 correlation) before trusting it. The same trick
+   does **not** work for the plain-product ("simple"/NAFNet) gate -- checked and found worse than the
+   output scale itself (heavy-tailed outliers from squaring) -- left unfixed, `simple` excluded from runs
+   until solved properly.
+3. *CUDA OOM, then a stuck gradient*: batch_size=16 OOM'd a T4 partway through epoch 1 (a ViT-Base video
+   transformer over 8 frames at 224x224 holds far more activation memory than anything else in this
+   project). Fixed with mixed precision (fp16 autocast + GradScaler) + batch_size=8. This then made the
+   warm-started adaptive gate's training completely stall (loss flat at ln(5), val macro-F1 bit-identical
+   for 3 epochs straight) -- diagnosed by checking gradients in plain fp32 on CPU (no NaN/Inf, healthy
+   magnitudes, ruling out the warm-start weights) and concluding GradScaler was skipping nearly every
+   optimizer step on gradient overflow. Fixed with gradient clipping before the scaler step -- confirmed
+   fixed (amp_scale stayed pinned at 32768 instead of collapsing; the model now genuinely learns).
+
+**Results so far, scaling up on the CricketVision-only subset (5 shot classes) before expanding scope:**
+
+| clips | gate | test macro-F1 |
+|---|---|---|
+| 300 | none | 0.533 |
+| 1,500 | none | **0.678** |
+| 1,500 | adaptive (gradient-clip fix) | 0.231 (learning, but well behind `none` within an 8-epoch budget) |
+
+`none`'s result climbs clearly with scale (0.533 -> 0.678) and already matches the better pose-only
+baselines (LSTM 0.785, GRU 0.777) despite only 1,500 of the ~4,863 CricketVision clips and a much harder
+task (raw pixels, not pre-extracted joints) -- real signal that this approach is worth scaling further,
+not a result to settle for. `adaptive` learns correctly post-fix but is far behind `none` in the same
+epoch budget; not yet tuned (a separate/lower learning rate for the gate's fresh parameters is the next
+thing to try, not attempted yet).
+
+**Next step, in progress:** scale to the full pool across all 6 sources (cricshot10k 6,316 + cricketvision
+4,863 + ipl2023 1,481 + kucricshot 1,192 + cricshot10 1,119 + amittalmale 409 = **15,380 clips, 8 shot
+classes**), re-running `none` as the real baseline on this harder task (the 1,500-clip number doesn't
+carry over) alongside `adaptive`. Given this is a multi-hour run and the project has already hit three
+separate failure modes in this exact script, added epoch-level checkpoint/resume support (full
+model+optimizer+scaler state saved every epoch, self-referential `kernel_sources` in
+`kernel-metadata.json` so a prior push's output is visible as input on the next push) -- verified locally
+end-to-end on a 4-clip real-data fixture (ran 1 epoch, confirmed the checkpoint, re-ran with a higher
+epoch budget, confirmed it resumed from epoch 1 rather than restarting, and that the final eval correctly
+reloaded the best-epoch weights) before spending Kaggle GPU time on the real run.
+
 ## Open decisions
 - Practice/nets/shadow-batting videos (no bowler or ball) are parked; focus is match clips for now.

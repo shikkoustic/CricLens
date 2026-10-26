@@ -19,8 +19,9 @@ connection exactly.
 
 Heavier than every previous job in this project: raw pixels (8 frames, 224x224, cropped per-frame to the
 batter box with 12% padding and zero-padding beyond frame edges, same convention as the pose pipeline's
-zero-padding fix) through a ~121M-parameter transformer, not 51 numbers/frame through a GRU. Start small
-(CRICLENS_LIMIT) to validate the pipeline before scaling to the full CricketVision pool.
+zero-padding fix) through a ~121M-parameter transformer, not 51 numbers/frame through a GRU. Validated at
+300 then 1,500 clips (CricketVision-only, 5-class) before this run, which uses the full 6-source, 8-class
+pool (~15,380 clips) -- CRICLENS_LIMIT can still cap it for a quick smoke test.
 
 Inputs : shikkoustic/criclens-all (criclens-processed.tgz.bin -> data/processed/pose_index.parquet +
           kaggle/chunks/pose-*/out/kps/<clip>.npz for window/box data; clips/<source>/<clip_id>.mp4 read
@@ -48,9 +49,10 @@ from transformers import TimesformerForVideoClassification
 OUT = os.environ.get("CRICLENS_OUT", "/kaggle/working")
 LOCAL = os.environ.get("CRICLENS_LOCAL")
 LOCAL_CLIPS = os.environ.get("CRICLENS_LOCAL_CLIPS")  # dir containing <source>/<clip_id>.mp4, for smoke tests
-LIMIT = int(os.environ.get("CRICLENS_LIMIT", "1500"))  # calibration run: 5x the first subset, to
-# measure real per-epoch throughput at scale before committing to the full ~4,800-clip pool unchunked
-# (the first run's 236-clip timing doesn't reliably predict full-scale wall time)
+_limit_env = os.environ.get("CRICLENS_LIMIT")  # unset => no cap: use the full 6-source, 8-class pool
+LIMIT = int(_limit_env) if _limit_env else None  # (~15,380 clips). Calibration runs on the CricketVision-only
+# subset (300, then 1,500 clips) already showed macro-F1 climbing with scale (0.533 -> 0.678), so this run
+# uses everything rather than another capped subset.
 os.makedirs(OUT, exist_ok=True)
 if LOCAL:
     PROC = LOCAL
@@ -76,8 +78,12 @@ IMAGENET_STD = np.array([0.229, 0.224, 0.225], np.float32)
 
 
 def load_labelled_clips(limit=None):
+    """All 6 sources, all 8 shot types (~15,380 clips) -- verified before using it that every
+    non-CricketVision source's kps.npz has the same 'boxes'/'window' fields in the same format
+    (checked ipl2023 directly), and that clips/<source>/<clip_id>.mp4 exists in the dataset for every
+    source (confirmed via the dataset file listing), so cache_clips' per-row r.source lookup just works."""
     idx = pd.read_parquet(f"{PROC}/data/processed/pose_index.parquet")
-    d = idx[idx.train_ready & (idx.shot != "other") & (idx.source == "cricketvision")][
+    d = idx[idx.train_ready & (idx.shot != "other")][
         ["clip_id", "shot", "split", "source", "handedness", "kps_path"]]
     limit = limit or (LIMIT or None)
     return d.head(limit) if limit else d
@@ -256,13 +262,34 @@ def classify_eval(preds, trues, n_classes):
     return acc, macro_f1, weighted_f1
 
 
+def find_checkpoint(gate):
+    """Checks OUT first (a checkpoint from an earlier call within the same process/output dir -- this is
+    what a local resume test exercises, since there's no /kaggle/input locally), then falls back to a
+    recursive glob under /kaggle/input. Self-referential kernel_sources (kernel-metadata.json lists this
+    same kernel as its own source) makes a prior push's /kaggle/working output show up under
+    /kaggle/input on the next push -- same generic-glob pattern as find_pretrained_encoder(), so this
+    doesn't need to know Kaggle's exact input-folder naming. Returns None (start fresh) if neither has a
+    checkpoint, which is the correct behaviour on the very first push too."""
+    own = f"{OUT}/checkpoint_{gate}.pt"
+    if os.path.exists(own):
+        return own
+    hits = glob.glob(f"/kaggle/input/**/checkpoint_{gate}.pt", recursive=True)
+    return hits[0] if hits else None
+
+
 def run(gate, epochs, device, d, cache, classes, batch_size=8, patience=3, lr=1e-4, seed=0):
     """batch_size=16 OOM'd a T4 (14.56 GiB) partway through epoch 1 of the 'none' condition -- a
     ViT-Base video transformer over 8 frames at 224x224 holds a lot more activation memory per sample
     than anything else in this project. Fixed two ways, not just by shrinking the batch further: mixed
     precision (fp16 autocast + GradScaler) roughly halves activation memory AND is faster on a T4's
     tensor cores, so batch_size=8 with amp should be safer AND not meaningfully slower than the 16 that
-    OOM'd."""
+    OOM'd.
+
+    Checkpoints every epoch (full resumable state: model, optimizer, scaler, best-so-far) and resumes
+    from one if found -- the full 15,380-clip, 8-class pool is a multi-hour job, and this script has
+    already hit three different failure modes (an opaque stuck session, an OOM, and a stuck-gradient
+    bug) in three prior runs, so losing hours of progress to a fourth is a real risk worth engineering
+    around rather than risking again."""
     torch.manual_seed(seed); np.random.seed(seed)
     tr, va, te = (d[d.split == s] for s in ("train", "val", "test"))
     print(f"[gate={gate}, seed={seed}] train={len(tr)} val={len(va)} test={len(te)}", flush=True)
@@ -279,8 +306,15 @@ def run(gate, epochs, device, d, cache, classes, batch_size=8, patience=3, lr=1e
     dl_va = DataLoader(VideoDataset(va, classes, cache), batch_size=batch_size)
     dl_te = DataLoader(VideoDataset(te, classes, cache), batch_size=batch_size)
 
-    best_f1, best_state, bad = -1.0, None, 0
-    for ep in range(epochs):
+    start_ep, best_f1, best_state, bad = 0, -1.0, None, 0
+    ckpt_path = find_checkpoint(gate)
+    if ckpt_path:
+        ckpt = torch.load(ckpt_path, map_location=device)
+        model.load_state_dict(ckpt["model"]); opt.load_state_dict(ckpt["opt"]); scaler.load_state_dict(ckpt["scaler"])
+        start_ep, best_f1, best_state, bad = ckpt["epoch"], ckpt["best_f1"], ckpt["best_state"], ckpt["bad"]
+        print(f"[gate={gate}, seed={seed}] RESUMED from {ckpt_path}: epoch={start_ep} best_f1={best_f1:.3f}", flush=True)
+
+    for ep in range(start_ep, epochs):
         model.train(); t0 = time.time(); tot_loss = 0.0
         for xb, yb in dl_tr:
             xb, yb = xb.to(device), yb.to(device)
@@ -304,9 +338,12 @@ def run(gate, epochs, device, d, cache, classes, batch_size=8, patience=3, lr=1e
             best_f1, best_state, bad = macro_f1, {k: v.cpu().clone() for k, v in model.state_dict().items()}, 0
         else:
             bad += 1
-            if bad >= patience:
-                print(f"  [gate={gate}, seed={seed}] early stop", flush=True)
-                break
+        torch.save({"model": model.state_dict(), "opt": opt.state_dict(), "scaler": scaler.state_dict(),
+                    "epoch": ep + 1, "best_f1": best_f1, "best_state": best_state, "bad": bad},
+                   f"{OUT}/checkpoint_{gate}.pt")
+        if bad >= patience:
+            print(f"  [gate={gate}, seed={seed}] early stop", flush=True)
+            break
 
     model.load_state_dict(best_state); model.eval()
     preds, trues = [], []
@@ -329,9 +366,10 @@ def run(gate, epochs, device, d, cache, classes, batch_size=8, patience=3, lr=1e
 def main():
     device = "cuda" if torch.cuda.is_available() else "cpu"
     epochs = int(os.environ.get("CRICLENS_EPOCHS", "8"))  # patience=3 should stop earlier if it converges
-    # 'none' already confirmed working well (test macro-F1 0.678 on this same 1,500-clip pool) --
-    # only re-testing 'adaptive' with the gradient-clipping fix, no need to burn GPU time re-running 'none'.
-    gates = os.environ.get("CRICLENS_GATES", "adaptive").split(",")
+    # 'none' confirmed 0.678 macro-F1 on the 1,500-clip CricketVision-only subset; re-running it here
+    # because the full 6-source, 8-class pool is a different (harder) task, so that number doesn't carry
+    # over -- need a real baseline on this pool before 'adaptive' can be judged against it.
+    gates = os.environ.get("CRICLENS_GATES", "none,adaptive").split(",")
     seed = int(os.environ.get("CRICLENS_SEED", "0"))
     print(f"device={device}  epochs={epochs}  gates={gates}  seed={seed}", flush=True)
 
