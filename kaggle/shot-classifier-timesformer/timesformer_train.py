@@ -329,7 +329,9 @@ def run(gate, epochs, device, d, cache, classes, batch_size=8, patience=3, lr=1e
 def main():
     device = "cuda" if torch.cuda.is_available() else "cpu"
     epochs = int(os.environ.get("CRICLENS_EPOCHS", "8"))  # patience=3 should stop earlier if it converges
-    gates = os.environ.get("CRICLENS_GATES", "none,adaptive").split(",")  # 'adaptive' now warm-started
+    # 'none' already confirmed working well (test macro-F1 0.678 on this same 1,500-clip pool) --
+    # only re-testing 'adaptive' with the gradient-clipping fix, no need to burn GPU time re-running 'none'.
+    gates = os.environ.get("CRICLENS_GATES", "adaptive").split(",")
     seed = int(os.environ.get("CRICLENS_SEED", "0"))
     print(f"device={device}  epochs={epochs}  gates={gates}  seed={seed}", flush=True)
 
