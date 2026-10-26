@@ -256,7 +256,13 @@ def classify_eval(preds, trues, n_classes):
     return acc, macro_f1, weighted_f1
 
 
-def run(gate, epochs, device, d, cache, classes, batch_size=16, patience=3, lr=1e-4, seed=0):
+def run(gate, epochs, device, d, cache, classes, batch_size=8, patience=3, lr=1e-4, seed=0):
+    """batch_size=16 OOM'd a T4 (14.56 GiB) partway through epoch 1 of the 'none' condition -- a
+    ViT-Base video transformer over 8 frames at 224x224 holds a lot more activation memory per sample
+    than anything else in this project. Fixed two ways, not just by shrinking the batch further: mixed
+    precision (fp16 autocast + GradScaler) roughly halves activation memory AND is faster on a T4's
+    tensor cores, so batch_size=8 with amp should be safer AND not meaningfully slower than the 16 that
+    OOM'd."""
     torch.manual_seed(seed); np.random.seed(seed)
     tr, va, te = (d[d.split == s] for s in ("train", "val", "test"))
     print(f"[gate={gate}, seed={seed}] train={len(tr)} val={len(va)} test={len(te)}", flush=True)
@@ -266,6 +272,8 @@ def run(gate, epochs, device, d, cache, classes, batch_size=16, patience=3, lr=1
     counts = tr.shot.value_counts().reindex(classes).to_numpy()
     weight = torch.tensor(counts.sum() / (len(classes) * counts), dtype=torch.float32, device=device)
     crit = nn.CrossEntropyLoss(weight=weight)
+    amp = device == "cuda"
+    scaler = torch.amp.GradScaler("cuda", enabled=amp)
 
     dl_tr = DataLoader(VideoDataset(tr, classes, cache), batch_size=batch_size, shuffle=True)
     dl_va = DataLoader(VideoDataset(va, classes, cache), batch_size=batch_size)
@@ -277,11 +285,12 @@ def run(gate, epochs, device, d, cache, classes, batch_size=16, patience=3, lr=1
         for xb, yb in dl_tr:
             xb, yb = xb.to(device), yb.to(device)
             opt.zero_grad()
-            loss = crit(model(pixel_values=xb).logits, yb)
-            loss.backward(); opt.step()
+            with torch.amp.autocast("cuda", enabled=amp):
+                loss = crit(model(pixel_values=xb).logits, yb)
+            scaler.scale(loss).backward(); scaler.step(opt); scaler.update()
             tot_loss += loss.item() * len(yb)
         model.eval(); preds, trues = [], []
-        with torch.no_grad():
+        with torch.no_grad(), torch.amp.autocast("cuda", enabled=amp):
             for xb, yb in dl_va:
                 preds += model(pixel_values=xb.to(device)).logits.argmax(1).cpu().tolist(); trues += yb.tolist()
         acc, macro_f1, weighted_f1 = classify_eval(preds, trues, len(classes))
@@ -297,16 +306,20 @@ def run(gate, epochs, device, d, cache, classes, batch_size=16, patience=3, lr=1
 
     model.load_state_dict(best_state); model.eval()
     preds, trues = [], []
-    with torch.no_grad():
+    with torch.no_grad(), torch.amp.autocast("cuda", enabled=amp):
         for xb, yb in dl_te:
             preds += model(pixel_values=xb.to(device)).logits.argmax(1).cpu().tolist(); trues += yb.tolist()
     acc, macro_f1, weighted_f1 = classify_eval(preds, trues, len(classes))
     print(f"\n[gate={gate}, seed={seed}] TEST  acc={acc:.3f}  macro_f1={macro_f1:.3f}  weighted_f1={weighted_f1:.3f}", flush=True)
 
     torch.save(best_state, f"{OUT}/timesformer_{gate}_seed{seed}.pt")
-    return {"gate": gate, "seed": seed, "best_val_macro_f1": best_f1, "test_accuracy": acc,
-            "test_macro_f1": macro_f1, "test_weighted_f1": weighted_f1,
-            "n_train": len(tr), "n_val": len(va), "n_test": len(te), "classes": classes}
+    result = {"gate": gate, "seed": seed, "best_val_macro_f1": best_f1, "test_accuracy": acc,
+              "test_macro_f1": macro_f1, "test_weighted_f1": weighted_f1,
+              "n_train": len(tr), "n_val": len(va), "n_test": len(te), "classes": classes}
+    del model, opt, scaler, best_state  # AdamW state is ~2x model size; free it before the next gate's run
+    if device == "cuda":
+        torch.cuda.empty_cache()
+    return result
 
 
 def main():
