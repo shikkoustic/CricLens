@@ -273,8 +273,13 @@ app.mount("/static", StaticFiles(directory=APP / "static"), name="static")
 
 
 @app.get("/")
-def index():
-    return FileResponse(APP / "static/index.html")
+def home():
+    return FileResponse(APP / "static/home.html")
+
+
+@app.get("/analyze")
+def analyze():
+    return FileResponse(APP / "static/analyze.html")
 
 
 def main():
