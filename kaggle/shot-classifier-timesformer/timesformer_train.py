@@ -48,7 +48,9 @@ from transformers import TimesformerForVideoClassification
 OUT = os.environ.get("CRICLENS_OUT", "/kaggle/working")
 LOCAL = os.environ.get("CRICLENS_LOCAL")
 LOCAL_CLIPS = os.environ.get("CRICLENS_LOCAL_CLIPS")  # dir containing <source>/<clip_id>.mp4, for smoke tests
-LIMIT = int(os.environ.get("CRICLENS_LIMIT", "300"))  # small-subset validation run; raise once confirmed
+LIMIT = int(os.environ.get("CRICLENS_LIMIT", "1500"))  # calibration run: 5x the first subset, to
+# measure real per-epoch throughput at scale before committing to the full ~4,800-clip pool unchunked
+# (the first run's 236-clip timing doesn't reliably predict full-scale wall time)
 os.makedirs(OUT, exist_ok=True)
 if LOCAL:
     PROC = LOCAL
@@ -159,9 +161,21 @@ class VideoDataset(Dataset):
 
 class GatedFeedForward(nn.Module):
     """Same simple/adaptive gate as kaggle/shot-classifier-sttr-gate/shot_sttr.py, outputting hidden_size
-    directly so it can take TimesformerLayer's `.intermediate` slot with `.output` set to nn.Identity()."""
+    directly so it can take TimesformerLayer's `.intermediate` slot with `.output` set to nn.Identity().
 
-    def __init__(self, hidden_size, intermediate_size, gate="simple", dropout=0.0):
+    WARM-START FIX (PROGRESS.md 2026-10-26, after the first small-subset run): naively replacing
+    intermediate+output discards that layer's pretrained Kinetics feed-forward weights entirely, so a
+    freshly-initialized gate has to relearn 12 layers' worth of feed-forward transforms from scratch --
+    on a tiny subset (236 train clips, 5 epochs) the loss barely moved (1.89 -> 1.64) while the
+    pretrained-FFN control dropped 1.66 -> 0.14. Fix: initialize the gate so it starts out computing
+    (approximately) the same thing the original pretrained dense1->activation->dense2 did, then let
+    training adapt the gate parameters away from that starting point instead of from random noise.
+    'adaptive' is accordingly plain GLU (a * sigmoid(b), the base case in Shazeer's GLU-variants paper,
+    arXiv:2002.05202 -- not the SwiGLU variant used before) specifically because sigmoid's bounded output
+    allows a clean "gate open" initialization (bias=4 -> sigmoid~0.98) that a Swish gate does not."""
+
+    def __init__(self, hidden_size, intermediate_size, gate="simple", dropout=0.0,
+                 pretrained_dense=None, pretrained_out=None):
         super().__init__()
         self.gate = gate
         if gate == "simple":
@@ -171,13 +185,42 @@ class GatedFeedForward(nn.Module):
             self.proj_b = nn.Linear(hidden_size, intermediate_size)
         self.proj_out = nn.Linear(intermediate_size, hidden_size)
         self.drop = nn.Dropout(dropout)
+        if pretrained_dense is not None:
+            self._warm_start(pretrained_dense, pretrained_out)
+
+    @torch.no_grad()
+    def _warm_start(self, dense, out):
+        """Checked empirically (not just assumed) before committing GPU time: on a random input through
+        a real pretrained layer, out(SiLU(dense(x))) vs the true out(GELU(dense(x))) gives mean abs diff
+        0.29 against an output scale of 3.47 (~8% relative error, correlation 0.998 between SiLU(dense(x))
+        and GELU(dense(x))) -- a close stand-in. The first version of this (b~constant, a*b~=a, skipping
+        the nonlinearity entirely) was NOT checked this way and turned out badly wrong (~100% relative
+        error) -- GELU is a real nonlinear transform, not something a constant gate can skip past."""
+        n = dense.out_features
+        if self.gate == "simple":
+            # Tried the same approach (a=b=dense -> a*a = dense(x)^2) with a 0.5 output rescale, same
+            # as 'adaptive' below -- checked it the same way and it does NOT work: mean abs diff 6.25
+            # against an output scale of 3.47 (worse than the scale itself), because squaring produces
+            # heavy-tailed outliers (max diff 76 on the same test) that no scalar rescale fixes -- that's
+            # a shape mismatch against GELU, not a magnitude one. NAFNet's plain product has no bounded
+            # gate the way sigmoid does, so there's no equally clean warm-start for it. Left as plain
+            # random init (pretrained_dense is still used for proj_out only, everything else default
+            # nn.Linear init) rather than ship an unverified rescale -- 'simple' is excluded from
+            # CRICLENS_GATES below until this is solved properly.
+            self.proj_out.weight.copy_(out.weight); self.proj_out.bias.copy_(out.bias)
+        else:
+            # a=b=dense -> a*sigmoid(b) = dense(x)*sigmoid(dense(x)) = SiLU(dense(x)), the close GELU
+            # stand-in verified above.
+            self.proj_a.weight.copy_(dense.weight); self.proj_a.bias.copy_(dense.bias)
+            self.proj_b.weight.copy_(dense.weight); self.proj_b.bias.copy_(dense.bias)
+            self.proj_out.weight.copy_(out.weight); self.proj_out.bias.copy_(out.bias)
 
     def forward(self, x):
         if self.gate == "simple":
             a, b = self.proj_in(x).chunk(2, dim=-1)
             h = a * b
         else:
-            h = self.proj_a(x) * nn.functional.silu(self.proj_b(x))
+            h = self.proj_a(x) * torch.sigmoid(self.proj_b(x))
         return self.proj_out(self.drop(h))
 
 
@@ -187,8 +230,10 @@ def build_model(n_classes, gate, device):
     if gate != "none":
         cfg = model.config
         for layer in model.timesformer.encoder.layer:
+            dense, out = layer.intermediate.dense, layer.output.dense  # pretrained weights, before replacing
             layer.intermediate = GatedFeedForward(cfg.hidden_size, cfg.intermediate_size, gate=gate,
-                                                   dropout=cfg.hidden_dropout_prob)
+                                                   dropout=cfg.hidden_dropout_prob,
+                                                   pretrained_dense=dense, pretrained_out=out)
             layer.output = nn.Identity()
     return model.to(device)
 
@@ -211,7 +256,7 @@ def classify_eval(preds, trues, n_classes):
     return acc, macro_f1, weighted_f1
 
 
-def run(gate, epochs, device, d, cache, classes, batch_size=4, patience=4, lr=5e-5, seed=0):
+def run(gate, epochs, device, d, cache, classes, batch_size=16, patience=3, lr=1e-4, seed=0):
     torch.manual_seed(seed); np.random.seed(seed)
     tr, va, te = (d[d.split == s] for s in ("train", "val", "test"))
     print(f"[gate={gate}, seed={seed}] train={len(tr)} val={len(va)} test={len(te)}", flush=True)
@@ -266,8 +311,8 @@ def run(gate, epochs, device, d, cache, classes, batch_size=4, patience=4, lr=5e
 
 def main():
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    epochs = int(os.environ.get("CRICLENS_EPOCHS", "5"))  # small-subset validation run; raise once confirmed
-    gates = os.environ.get("CRICLENS_GATES", "none,adaptive").split(",")
+    epochs = int(os.environ.get("CRICLENS_EPOCHS", "8"))  # patience=3 should stop earlier if it converges
+    gates = os.environ.get("CRICLENS_GATES", "none,adaptive").split(",")  # 'adaptive' now warm-started
     seed = int(os.environ.get("CRICLENS_SEED", "0"))
     print(f"device={device}  epochs={epochs}  gates={gates}  seed={seed}", flush=True)
 
