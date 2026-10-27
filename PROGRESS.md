@@ -580,5 +580,23 @@ end-to-end on a 4-clip real-data fixture (ran 1 epoch, confirmed the checkpoint,
 epoch budget, confirmed it resumed from epoch 1 rather than restarting, and that the final eval correctly
 reloaded the best-epoch weights) before spending Kaggle GPU time on the real run.
 
+**That run died anyway -- a fourth failure mode, bigger than the checkpointing was built for.** Killed by
+Kaggle's OOM killer (plain `Killed`, no traceback) 43 minutes in, before a single epoch finished, so the
+new checkpoint/resume support never even got a chance to matter. Root cause: `cache_clips()` decoded
+*every* clip's full pixel array (8x224x224x3 float32, ~4.6 MB/clip) into one Python dict held entirely in
+RAM before training started -- fine at 300-1,500 clips (1-7 GB) but ~70 GB at the full 15,380-clip pool,
+far past what a Kaggle GPU session's RAM allows. This design had only ever been exercised at the smaller
+scales; nothing about it was wrong until the pool size changed by 10x.
+
+Fixed by not holding decoded pixels at all: `VideoDataset` now decodes+crops each clip's frames on
+access (lazily, per batch) instead of from a pre-built RAM cache, with `DataLoader(num_workers=4)` so
+that CPU decode overlaps GPU compute instead of serializing in front of it. A cheap `precheck_clips()`
+(reads only the small kps.npz window/box arrays, not video) replaces the old full-decode prefilter for
+dropping clips with un-trackable windows; a clip that still fails to decode at runtime (rare: genuine
+video I/O corruption, not a window/box issue) falls back to an all-zero tensor rather than crashing a
+whole epoch over one bad file. Verified the same way as the checkpoint logic -- re-ran the 4-clip local
+fixture end-to-end (including the resume check) against the lazy-decode path before relaunching on
+Kaggle.
+
 ## Open decisions
 - Practice/nets/shadow-batting videos (no bowler or ball) are parked; focus is match clips for now.

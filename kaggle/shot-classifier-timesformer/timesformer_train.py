@@ -81,7 +81,7 @@ def load_labelled_clips(limit=None):
     """All 6 sources, all 8 shot types (~15,380 clips) -- verified before using it that every
     non-CricketVision source's kps.npz has the same 'boxes'/'window' fields in the same format
     (checked ipl2023 directly), and that clips/<source>/<clip_id>.mp4 exists in the dataset for every
-    source (confirmed via the dataset file listing), so cache_clips' per-row r.source lookup just works."""
+    source (confirmed via the dataset file listing), so VideoDataset's per-row r.source lookup just works."""
     idx = pd.read_parquet(f"{PROC}/data/processed/pose_index.parquet")
     d = idx[idx.train_ready & (idx.shot != "other")][
         ["clip_id", "shot", "split", "source", "handedness", "kps_path"]]
@@ -138,31 +138,46 @@ def read_clip_pixels(video_path, boxes, window, num_frames=NUM_FRAMES):
     return arr.transpose(0, 3, 1, 2)  # (T, 3, H, W)
 
 
-def cache_clips(df, clips_root):
-    cache, failed = {}, []
+def precheck_clips(df):
+    """Filters out clips whose window/box data can never decode (same two checks read_clip_pixels makes)
+    WITHOUT touching video or holding pixels -- just the tiny kps.npz arrays (~10-15 KB each, fine to
+    open 15k+ of in sequence). Caught in production: the full pixel-caching approach this replaced
+    (`cache_clips`, decode-everything-into-a-RAM-dict-upfront) held all ~15,380 clips' 8x224x224x3
+    float32 arrays simultaneously (~4.6 MB/clip, ~70 GB total) and got SIGKILLed by Kaggle's OOM killer
+    43 minutes into the full-pool run, before a single epoch finished -- it had only ever been exercised
+    at 300-1,500 clips (1-7 GB), which fit. Fix: don't hold decoded pixels for more than one batch at a
+    time (see VideoDataset below); this prefilter only needs the lightweight metadata, so it stays cheap
+    at any scale."""
+    failed = []
     for r in df.itertuples():
         z = np.load(f"{PROC}/{r.kps_path}")
-        video_path = f"{clips_root}/{r.source}/{r.clip_id}.mp4"
-        pix = read_clip_pixels(video_path, z["boxes"], z["window"])
-        if pix is None:
+        lo, c, hi = (int(v) for v in z["window"])
+        if hi <= lo or not np.isfinite(z["boxes"]).all(axis=1).any():
             failed.append(r.clip_id)
-            continue
-        cache[r.clip_id] = pix
-    return cache, failed
+    return failed
 
 
 class VideoDataset(Dataset):
-    def __init__(self, df, classes, cache):
+    """Decodes and crops each clip's frames on access rather than caching them -- see precheck_clips for
+    why. A clip that fails to decode at runtime (rare: real video I/O corruption, not the window/box
+    issues precheck_clips already removed) falls back to an all-zero tensor rather than crashing a whole
+    epoch over one bad file; DataLoader(num_workers>0) overlaps this CPU decode with GPU compute."""
+    def __init__(self, df, classes, clips_root):
         self.df = df.reset_index(drop=True)
         self.c2i = {c: i for i, c in enumerate(classes)}
-        self.cache = cache
+        self.clips_root = clips_root
 
     def __len__(self):
         return len(self.df)
 
     def __getitem__(self, i):
         r = self.df.iloc[i]
-        return torch.from_numpy(self.cache[r.clip_id]), self.c2i[r.shot]
+        z = np.load(f"{PROC}/{r.kps_path}")
+        video_path = f"{self.clips_root}/{r.source}/{r.clip_id}.mp4"
+        pix = read_clip_pixels(video_path, z["boxes"], z["window"])
+        if pix is None:
+            pix = np.zeros((NUM_FRAMES, 3, IMG_SIZE, IMG_SIZE), np.float32)
+        return torch.from_numpy(pix), self.c2i[r.shot]
 
 
 class GatedFeedForward(nn.Module):
@@ -277,7 +292,7 @@ def find_checkpoint(gate):
     return hits[0] if hits else None
 
 
-def run(gate, epochs, device, d, cache, classes, batch_size=8, patience=3, lr=1e-4, seed=0):
+def run(gate, epochs, device, d, clips_root, classes, batch_size=8, patience=3, lr=1e-4, seed=0, num_workers=4):
     """batch_size=16 OOM'd a T4 (14.56 GiB) partway through epoch 1 of the 'none' condition -- a
     ViT-Base video transformer over 8 frames at 224x224 holds a lot more activation memory per sample
     than anything else in this project. Fixed two ways, not just by shrinking the batch further: mixed
@@ -302,9 +317,12 @@ def run(gate, epochs, device, d, cache, classes, batch_size=8, patience=3, lr=1e
     amp = device == "cuda"
     scaler = torch.amp.GradScaler("cuda", enabled=amp)
 
-    dl_tr = DataLoader(VideoDataset(tr, classes, cache), batch_size=batch_size, shuffle=True)
-    dl_va = DataLoader(VideoDataset(va, classes, cache), batch_size=batch_size)
-    dl_te = DataLoader(VideoDataset(te, classes, cache), batch_size=batch_size)
+    # VideoDataset now decodes+crops per access (see precheck_clips/VideoDataset docstrings) instead of
+    # reading from a RAM cache, so worker processes overlap that CPU decode with GPU compute.
+    dl_tr = DataLoader(VideoDataset(tr, classes, clips_root), batch_size=batch_size, shuffle=True,
+                        num_workers=num_workers, persistent_workers=num_workers > 0)
+    dl_va = DataLoader(VideoDataset(va, classes, clips_root), batch_size=batch_size, num_workers=num_workers)
+    dl_te = DataLoader(VideoDataset(te, classes, clips_root), batch_size=batch_size, num_workers=num_workers)
 
     start_ep, best_f1, best_state, bad = 0, -1.0, None, 0
     ckpt_path = find_checkpoint(gate)
@@ -375,11 +393,12 @@ def main():
 
     d_all = load_labelled_clips()
     classes = sorted(d_all.shot.unique())
-    cache, failed = cache_clips(d_all, clips_dir())
+    failed = precheck_clips(d_all)
     d_all = d_all[~d_all.clip_id.isin(failed)]
-    print(f"cached {len(cache)} clips ({len(failed)} failed), classes={classes}", flush=True)
+    print(f"{len(d_all)} clips pass precheck ({len(failed)} dropped), classes={classes}", flush=True)
+    root = clips_dir()
 
-    summary = [run(g, epochs, device, d_all, cache, classes, seed=seed) for g in gates]
+    summary = [run(g, epochs, device, d_all, root, classes, seed=seed) for g in gates]
     json.dump(summary, open(f"{OUT}/summary.json", "w"), indent=2)
     print("\n=== summary ===", flush=True)
     for s in summary:
