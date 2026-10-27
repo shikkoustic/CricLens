@@ -462,7 +462,12 @@ def run(gate, epochs, device, d, clips_root, classes, batch_size=8, patience=3, 
 
 def main():
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    epochs = int(os.environ.get("CRICLENS_EPOCHS", "8"))  # patience=3 should stop earlier if it converges
+    # Val macro-F1 was still climbing every epoch through the first 8-epoch budget (0.169 -> 0.557 at
+    # ep7, PROGRESS.md 2026-10-27) with patience=3 never triggered -- raised to 13 (5 more epochs) so it
+    # can keep going on checkpoint-resume (reuses the completed run's saved model/optimizer/scaler state,
+    # continuing from epoch 9, not a restart). Kept to +5 rather than +8 to comfortably fit shikkoustic's
+    # remaining ~8h GPU quota (~5 x 38min =~ 3.2h) instead of cutting it close.
+    epochs = int(os.environ.get("CRICLENS_EPOCHS", "13"))
     # 'none' and 'adaptive' are the full-pool run already in flight/completed as of PROGRESS.md
     # 2026-10-27 -- default here to 'contact' only (the architectural-novelty gate) so the next push
     # doesn't burn GPU time re-running already-confirmed numbers.
