@@ -6,8 +6,11 @@ pixels, and came back negative, 3-seed confirmed -- PROGRESS.md 2026-10-26). Thi
 video frames, cropped to the batter's tracked bounding box (already computed by the pose pipeline, kps.npz
 'boxes'), through Facebook's Kinetics-400-pretrained Timesformer (arXiv:2102.05095, HuggingFace
 `facebook/timesformer-base-finetuned-k400`), with each block's feed-forward sublayer optionally replaced
-by a gated version: 'simple' (NAFNet, arXiv:2204.04676) or 'adaptive' (SwiGLU-style, Shazeer,
-arXiv:2002.05202). 'none' keeps the original pretrained GELU feed-forward, as the control.
+by a gated version: 'simple' (NAFNet, arXiv:2204.04676), 'adaptive' (SwiGLU-style, Shazeer,
+arXiv:2002.05202), or 'contact' (this project's own architectural novelty, added 2026-10-27: the
+'adaptive' gate additionally conditioned on each sampled frame's distance to the ball-bat contact
+frame -- see GatedFeedForward's docstring). 'none' keeps the original pretrained GELU feed-forward,
+as the control.
 
 IMPORTANT caveat, stated honestly: swapping intermediate+output discards that layer's PRETRAINED
 feed-forward weights (replaced with a freshly-initialized gated block) -- only the attention layers keep
@@ -109,18 +112,26 @@ def padded_crop(frame, box, pad=PAD):
 
 def read_clip_pixels(video_path, boxes, window, num_frames=NUM_FRAMES):
     """Sample num_frames evenly across [lo, hi], crop each to its tracked batter box, return
-    (num_frames, 3, H, W) float32, ImageNet-normalised, RGB. Some frames have no valid tracked box
-    (occlusion/low confidence, same tracking gaps the pose pipeline already deals with) -- fall back to
-    the nearest frame (by index distance) with a finite box; return None if the whole clip has none."""
+    ((num_frames, 3, H, W) float32 ImageNet-normalised RGB, (num_frames,) float32 contact_signal), or
+    (None, None) if the clip can't be read. Some frames have no valid tracked box (occlusion/low
+    confidence, same tracking gaps the pose pipeline already deals with) -- fall back to the nearest
+    frame (by index distance) with a finite box.
+
+    contact_signal[t] is sampled frame idxs[t]'s signed distance to the ball-bat contact frame `c`,
+    normalised by the window length -- the 'contact' gate (GatedFeedForward) uses this to condition its
+    feed-forward gate on proximity to the event the window is already anchored on; other gates ignore
+    it (computed here regardless since it's nearly free alongside idxs, and keeps one source of truth
+    for the frame-sampling formula instead of recomputing idxs wherever this signal is needed)."""
     lo, c, hi = (int(v) for v in window)
     if hi <= lo:
-        return None
+        return None, None
     valid = np.isfinite(boxes).all(axis=1)
     if not valid.any():
-        return None
+        return None, None
     valid_idx = np.flatnonzero(valid)
     idxs = np.linspace(lo, hi, num_frames).round().astype(int)
     idxs = np.clip(idxs, 0, len(boxes) - 1)
+    contact_signal = ((idxs - c) / max(hi - lo, 1)).astype(np.float32)
     cap = cv2.VideoCapture(str(video_path))
     frames = []
     for i in idxs:
@@ -129,13 +140,13 @@ def read_clip_pixels(video_path, boxes, window, num_frames=NUM_FRAMES):
         ok, f = cap.read()
         if not ok:
             cap.release()
-            return None
+            return None, None
         crop = padded_crop(cv2.cvtColor(f, cv2.COLOR_BGR2RGB), boxes[box_i])
         frames.append(crop)
     cap.release()
     arr = np.stack(frames).astype(np.float32) / 255.0  # (T, H, W, 3)
     arr = (arr - IMAGENET_MEAN) / IMAGENET_STD
-    return arr.transpose(0, 3, 1, 2)  # (T, 3, H, W)
+    return arr.transpose(0, 3, 1, 2), contact_signal  # (T, 3, H, W), (T,)
 
 
 def precheck_clips(df):
@@ -174,10 +185,11 @@ class VideoDataset(Dataset):
         r = self.df.iloc[i]
         z = np.load(f"{PROC}/{r.kps_path}")
         video_path = f"{self.clips_root}/{r.source}/{r.clip_id}.mp4"
-        pix = read_clip_pixels(video_path, z["boxes"], z["window"])
+        pix, contact_signal = read_clip_pixels(video_path, z["boxes"], z["window"])
         if pix is None:
             pix = np.zeros((NUM_FRAMES, 3, IMG_SIZE, IMG_SIZE), np.float32)
-        return torch.from_numpy(pix), self.c2i[r.shot]
+            contact_signal = np.zeros(NUM_FRAMES, np.float32)
+        return torch.from_numpy(pix), torch.from_numpy(contact_signal), self.c2i[r.shot]
 
 
 class GatedFeedForward(nn.Module):
@@ -193,7 +205,18 @@ class GatedFeedForward(nn.Module):
     training adapt the gate parameters away from that starting point instead of from random noise.
     'adaptive' is accordingly plain GLU (a * sigmoid(b), the base case in Shazeer's GLU-variants paper,
     arXiv:2002.05202 -- not the SwiGLU variant used before) specifically because sigmoid's bounded output
-    allows a clean "gate open" initialization (bias=4 -> sigmoid~0.98) that a Swish gate does not."""
+    allows a clean "gate open" initialization (bias=4 -> sigmoid~0.98) that a Swish gate does not.
+
+    'contact' (PROGRESS.md 2026-10-27, the architectural novelty angle, not published prior art like the
+    other two gates): same plain GLU, but the sigmoid gate's pre-activation is additionally biased by a
+    small linear readout of `contact_signal` -- each token's sampled frame's signed, window-normalised
+    distance to the ball-bat contact frame (set externally, once per forward pass, by GateWrapper; see
+    its docstring for the token-layout details). The idea: let the feed-forward gate open and close as a
+    function of how close this moment is to contact, something neither NAFNet's fixed gate nor a plain
+    learned gate can condition on, since neither sees per-frame timing at all. `contact_proj` is
+    zero-initialized (weight AND bias), so at init `contact_proj(contact_signal) == 0` for every input --
+    the gate reduces exactly to 'adaptive' at the start of training (the already-verified GELU stand-in
+    above), and training is what decides whether the contact signal ends up mattering."""
 
     def __init__(self, hidden_size, intermediate_size, gate="simple", dropout=0.0,
                  pretrained_dense=None, pretrained_out=None):
@@ -204,6 +227,10 @@ class GatedFeedForward(nn.Module):
         else:
             self.proj_a = nn.Linear(hidden_size, intermediate_size)
             self.proj_b = nn.Linear(hidden_size, intermediate_size)
+        if gate == "contact":
+            self.contact_proj = nn.Linear(1, intermediate_size)
+            nn.init.zeros_(self.contact_proj.weight); nn.init.zeros_(self.contact_proj.bias)
+            self.contact_signal = None  # (batch, seq_len, 1), set per-forward-pass by GateWrapper
         self.proj_out = nn.Linear(intermediate_size, hidden_size)
         self.drop = nn.Dropout(dropout)
         if pretrained_dense is not None:
@@ -231,7 +258,8 @@ class GatedFeedForward(nn.Module):
             self.proj_out.weight.copy_(out.weight); self.proj_out.bias.copy_(out.bias)
         else:
             # a=b=dense -> a*sigmoid(b) = dense(x)*sigmoid(dense(x)) = SiLU(dense(x)), the close GELU
-            # stand-in verified above.
+            # stand-in verified above. Covers both 'adaptive' and 'contact' -- contact_proj's separate
+            # zero-init (above) is what keeps 'contact' at this same starting point despite the extra term.
             self.proj_a.weight.copy_(dense.weight); self.proj_a.bias.copy_(dense.bias)
             self.proj_b.weight.copy_(dense.weight); self.proj_b.bias.copy_(dense.bias)
             self.proj_out.weight.copy_(out.weight); self.proj_out.bias.copy_(out.bias)
@@ -240,23 +268,59 @@ class GatedFeedForward(nn.Module):
         if self.gate == "simple":
             a, b = self.proj_in(x).chunk(2, dim=-1)
             h = a * b
+        elif self.gate == "contact":
+            b = self.proj_b(x)
+            if self.contact_signal is not None:
+                b = b + self.contact_proj(self.contact_signal.to(x.dtype))
+            h = self.proj_a(x) * torch.sigmoid(b)
         else:
             h = self.proj_a(x) * torch.sigmoid(self.proj_b(x))
         return self.proj_out(self.drop(h))
 
 
+class GateWrapper(nn.Module):
+    """Thin wrapper so run()'s forward call can always pass `contact_signal` (a per-sample, per-frame
+    tensor) whether or not the active gate uses it -- only 'contact' gate layers read it, via a plain
+    attribute set here each forward pass, since TimesformerEncoder's layer loop doesn't expose a way to
+    thread extra args through to each layer.intermediate call.
+
+    Token layout verified against the installed transformers' TimesformerEmbeddings.forward (divided
+    space-time attention path): the sequence is [CLS, then patch-major/frame-minor -- patch 0's frames
+    0..T-1, patch 1's frames 0..T-1, ...]. So tiling `contact_signal` (shape batch x T) to
+    (batch, num_patches x T) by repeating it num_patches times, then prepending one zero for CLS,
+    reproduces that exact order."""
+
+    def __init__(self, model, gate_layers, num_patches):
+        super().__init__()
+        self.model = model
+        self.gate_layers = gate_layers
+        self.num_patches = num_patches
+
+    def forward(self, pixel_values, contact_signal=None):
+        if self.gate_layers and contact_signal is not None:
+            b, t = contact_signal.shape
+            tok = contact_signal.unsqueeze(1).expand(b, self.num_patches, t).reshape(b, self.num_patches * t, 1)
+            tok = torch.cat([torch.zeros(b, 1, 1, device=tok.device, dtype=tok.dtype), tok], dim=1)
+            for g in self.gate_layers:
+                g.contact_signal = tok
+        return self.model(pixel_values=pixel_values)
+
+
 def build_model(n_classes, gate, device):
     model = TimesformerForVideoClassification.from_pretrained(
         "facebook/timesformer-base-finetuned-k400", num_labels=n_classes, ignore_mismatched_sizes=True)
+    gate_layers = []
     if gate != "none":
         cfg = model.config
         for layer in model.timesformer.encoder.layer:
             dense, out = layer.intermediate.dense, layer.output.dense  # pretrained weights, before replacing
-            layer.intermediate = GatedFeedForward(cfg.hidden_size, cfg.intermediate_size, gate=gate,
-                                                   dropout=cfg.hidden_dropout_prob,
-                                                   pretrained_dense=dense, pretrained_out=out)
+            g = GatedFeedForward(cfg.hidden_size, cfg.intermediate_size, gate=gate,
+                                  dropout=cfg.hidden_dropout_prob, pretrained_dense=dense, pretrained_out=out)
+            layer.intermediate = g
             layer.output = nn.Identity()
-    return model.to(device)
+            gate_layers.append(g)
+    num_patches = (model.config.image_size // model.config.patch_size) ** 2
+    return GateWrapper(model, gate_layers, num_patches).to(device)
 
 
 def classify_eval(preds, trues, n_classes):
@@ -334,11 +398,11 @@ def run(gate, epochs, device, d, clips_root, classes, batch_size=8, patience=3, 
 
     for ep in range(start_ep, epochs):
         model.train(); t0 = time.time(); tot_loss = 0.0
-        for xb, yb in dl_tr:
-            xb, yb = xb.to(device), yb.to(device)
+        for xb, cb, yb in dl_tr:
+            xb, cb, yb = xb.to(device), cb.to(device), yb.to(device)
             opt.zero_grad()
             with torch.amp.autocast("cuda", enabled=amp):
-                loss = crit(model(pixel_values=xb).logits, yb)
+                loss = crit(model(pixel_values=xb, contact_signal=cb).logits, yb)
             scaler.scale(loss).backward()
             scaler.unscale_(opt)  # needed before clipping -- grads are still fp16-scaled otherwise
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
@@ -346,8 +410,9 @@ def run(gate, epochs, device, d, clips_root, classes, batch_size=8, patience=3, 
             tot_loss += loss.item() * len(yb)
         model.eval(); preds, trues = [], []
         with torch.no_grad(), torch.amp.autocast("cuda", enabled=amp):
-            for xb, yb in dl_va:
-                preds += model(pixel_values=xb.to(device)).logits.argmax(1).cpu().tolist(); trues += yb.tolist()
+            for xb, cb, yb in dl_va:
+                preds += model(pixel_values=xb.to(device), contact_signal=cb.to(device)).logits.argmax(1).cpu().tolist()
+                trues += yb.tolist()
         acc, macro_f1, weighted_f1 = classify_eval(preds, trues, len(classes))
         scale_note = f"  amp_scale={scaler.get_scale():.0f}" if amp else ""
         print(f"  [gate={gate}, seed={seed}] epoch {ep+1}/{epochs}  train_loss={tot_loss/len(tr):.3f}  "
@@ -366,8 +431,9 @@ def run(gate, epochs, device, d, clips_root, classes, batch_size=8, patience=3, 
     model.load_state_dict(best_state); model.eval()
     preds, trues = [], []
     with torch.no_grad(), torch.amp.autocast("cuda", enabled=amp):
-        for xb, yb in dl_te:
-            preds += model(pixel_values=xb.to(device)).logits.argmax(1).cpu().tolist(); trues += yb.tolist()
+        for xb, cb, yb in dl_te:
+            preds += model(pixel_values=xb.to(device), contact_signal=cb.to(device)).logits.argmax(1).cpu().tolist()
+            trues += yb.tolist()
     acc, macro_f1, weighted_f1 = classify_eval(preds, trues, len(classes))
     print(f"\n[gate={gate}, seed={seed}] TEST  acc={acc:.3f}  macro_f1={macro_f1:.3f}  weighted_f1={weighted_f1:.3f}", flush=True)
 
@@ -384,10 +450,10 @@ def run(gate, epochs, device, d, clips_root, classes, batch_size=8, patience=3, 
 def main():
     device = "cuda" if torch.cuda.is_available() else "cpu"
     epochs = int(os.environ.get("CRICLENS_EPOCHS", "8"))  # patience=3 should stop earlier if it converges
-    # 'none' confirmed 0.678 macro-F1 on the 1,500-clip CricketVision-only subset; re-running it here
-    # because the full 6-source, 8-class pool is a different (harder) task, so that number doesn't carry
-    # over -- need a real baseline on this pool before 'adaptive' can be judged against it.
-    gates = os.environ.get("CRICLENS_GATES", "none,adaptive").split(",")
+    # 'none' and 'adaptive' are the full-pool run already in flight/completed as of PROGRESS.md
+    # 2026-10-27 -- default here to 'contact' only (the architectural-novelty gate) so the next push
+    # doesn't burn GPU time re-running already-confirmed numbers.
+    gates = os.environ.get("CRICLENS_GATES", "contact").split(",")
     seed = int(os.environ.get("CRICLENS_SEED", "0"))
     print(f"device={device}  epochs={epochs}  gates={gates}  seed={seed}", flush=True)
 

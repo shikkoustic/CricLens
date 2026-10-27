@@ -598,5 +598,42 @@ whole epoch over one bad file. Verified the same way as the checkpoint logic -- 
 fixture end-to-end (including the resume check) against the lazy-decode path before relaunching on
 Kaggle.
 
+### Update 2026-10-27: supervisor approved the body-part-independence novelty; new architecture angle -- 'contact' gate
+
+Supervisor approved the overall-score/individual-body-part-score independence finding (partial-rho 0.137,
+PROGRESS.md 2026-10-24 and earlier) as one novelty for the paper, and asked to keep building on the
+Timesformer/NAFNet direction. Since 'adaptive' is just Shazeer's published SwiGLU and 'simple' is
+NAFNet's own published gate, neither is *our* architectural contribution -- added a third gate, **'contact'**,
+as that piece: the 'adaptive' gate's sigmoid pre-activation is additionally biased by a learned readout of
+each sampled frame's signed, window-normalised distance to the ball-bat contact frame (already extracted
+by the pose pipeline as `window`, free to reuse). The idea: let the feed-forward gate open and close as a
+function of proximity to the contact moment -- something neither NAFNet's fixed gate nor a plain learned
+gate can do, since neither sees per-frame timing. This is specific to this project's data/task, not a
+repackaging of existing work.
+
+Implementation required knowing Timesformer's exact token layout (verified against the installed
+transformers' `TimesformerEmbeddings.forward`, divided-space-time path): tokens are `[CLS, then
+patch-major/frame-minor]` -- patch 0's 8 frames, then patch 1's 8 frames, etc. `GateWrapper` (new class)
+tiles the per-sample, per-frame contact signal into that exact order and sets it as an attribute on every
+gated layer before each forward pass, since `TimesformerEncoder`'s layer loop doesn't expose a way to pass
+extra arguments through. `contact_proj` (the new linear readout) is zero-initialized (weight AND bias),
+so at init the gate reduces exactly to 'adaptive' -- training decides whether the signal ends up mattering,
+rather than starting from an unverified random init.
+
+**Verified before spending any GPU time on it** (same rigor as the earlier warm-start fix): (1) a fresh
+'contact' model's logits are bit-identical to a fresh 'adaptive' model's on the same random input despite
+a nonzero contact signal (max abs diff 0.0) -- confirms the zero-init actually neutralises the new term;
+(2) the token-tiling code's output, checked in isolation against the derived patch-major/frame-minor
+order, places each frame's signal at exactly the expected positions; (3) hooked into a real pretrained
+model's gated layers and confirmed the contact-signal tensor's length matches the real hidden-states
+sequence length (1569 = 1 CLS + 196 patches x 8 frames) at every one of the 12 layers, not just in theory.
+Also re-ran the checkpoint/resume smoke test against this new wrapped model structure (state_dict keys
+now nest under `model.` because of `GateWrapper`) to confirm resume still works.
+
+**Not yet run on Kaggle** -- holding off pushing until the full-pool `none`/`adaptive` run (started this
+session, see the entry above) finishes, since pushing a new kernel version while one is `RUNNING` would
+very likely restart/cancel it. Default `CRICLENS_GATES` is now `contact` alone (not `none,adaptive,contact`)
+so the next push doesn't re-spend GPU time on already-confirmed numbers.
+
 ## Open decisions
 - Practice/nets/shadow-batting videos (no bowler or ball) are parked; focus is match clips for now.
