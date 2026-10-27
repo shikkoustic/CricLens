@@ -396,9 +396,10 @@ def run(gate, epochs, device, d, clips_root, classes, batch_size=8, patience=3, 
         start_ep, best_f1, best_state, bad = ckpt["epoch"], ckpt["best_f1"], ckpt["best_state"], ckpt["bad"]
         print(f"[gate={gate}, seed={seed}] RESUMED from {ckpt_path}: epoch={start_ep} best_f1={best_f1:.3f}", flush=True)
 
+    n_batches = len(dl_tr)
     for ep in range(start_ep, epochs):
-        model.train(); t0 = time.time(); tot_loss = 0.0
-        for xb, cb, yb in dl_tr:
+        model.train(); t0 = time.time(); tot_loss = 0.0; seen = 0; t_last_print = t0
+        for bi, (xb, cb, yb) in enumerate(dl_tr, 1):
             xb, cb, yb = xb.to(device), cb.to(device), yb.to(device)
             opt.zero_grad()
             with torch.amp.autocast("cuda", enabled=amp):
@@ -407,7 +408,19 @@ def run(gate, epochs, device, d, clips_root, classes, batch_size=8, patience=3, 
             scaler.unscale_(opt)  # needed before clipping -- grads are still fp16-scaled otherwise
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             scaler.step(opt); scaler.update()
-            tot_loss += loss.item() * len(yb)
+            tot_loss += loss.item() * len(yb); seen += len(yb)
+            # Kaggle's API only exposes a kernel's log once it finishes (confirmed -- `kaggle kernels
+            # logs`/`-f`/`output` all return nothing for a RUNNING kernel), so the one place to actually
+            # watch progress mid-run is the kernel's own page in a browser, which streams stdout live.
+            # This print (time-gated, not every batch, to avoid spamming that view) is what shows up there.
+            now = time.time()
+            if now - t_last_print >= 60 or bi == n_batches:
+                rate = seen / (now - t0)
+                eta_min = (n_batches * batch_size - seen) / rate / 60 if rate > 0 else float("nan")
+                print(f"    [gate={gate}, seed={seed}] epoch {ep+1}/{epochs}  batch {bi}/{n_batches}  "
+                      f"running_loss={tot_loss/seen:.3f}  ({rate:.1f} clips/s, ~{eta_min:.1f} min left this epoch)",
+                      flush=True)
+                t_last_print = now
         model.eval(); preds, trues = [], []
         with torch.no_grad(), torch.amp.autocast("cuda", enabled=amp):
             for xb, cb, yb in dl_va:
