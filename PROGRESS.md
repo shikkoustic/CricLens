@@ -635,5 +635,24 @@ session, see the entry above) finishes, since pushing a new kernel version while
 very likely restart/cancel it. Default `CRICLENS_GATES` is now `contact` alone (not `none,adaptive,contact`)
 so the next push doesn't re-spend GPU time on already-confirmed numbers.
 
+Ran it as a second, separate Kaggle kernel (`kaggle/shot-classifier-timesformer-contact/`) in parallel
+with the still-running `none`/`adaptive` job instead of waiting, since Kaggle allows 2 concurrent GPU
+sessions per account.
+
+**Result, full 15,380-clip, 8-class pool, 8 epochs (no early stop -- val macro-F1 was still climbing):**
+
+| epoch | val macro-F1 |
+|---|---|
+| 1 | 0.169 |
+| 3 | 0.292 |
+| 5 | 0.428 |
+| 7 | **0.557** (best) |
+| 8 | 0.504 |
+
+Test: acc=0.576, **macro_f1=0.540**, weighted_f1=0.567. ~38 min/epoch, ~5h15m total. The steady climb
+through epoch 7 (no plateau, patience=3 never triggered) suggests more epochs would likely help further
+-- not run yet, pending a decision on whether to spend more GPU time extending this before comparing
+against `none`/`adaptive`'s numbers on the same pool (that run is still in progress as of this writing).
+
 ## Open decisions
 - Practice/nets/shadow-batting videos (no bowler or ball) are parked; focus is match clips for now.
