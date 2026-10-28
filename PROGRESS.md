@@ -654,5 +654,45 @@ through epoch 7 (no plateau, patience=3 never triggered) suggests more epochs wo
 -- not run yet, pending a decision on whether to spend more GPU time extending this before comparing
 against `none`/`adaptive`'s numbers on the same pool (that run is still in progress as of this writing).
 
+### Update 2026-10-28: full comparison in -- both gates lose to the plain pretrained model, clearly
+
+`none` and `adaptive` finished overnight (as two separate kernels on a teammate's Kaggle account, after
+the original single-kernel sequential run got stuck at 13h+ and was killed -- see above). `contact` was
+separately extended from 8 to 13 epochs via checkpoint-resume (not restart) on shikkoustic's account,
+and hit early-stop (patience=3) at epoch 12, so it's a converged number, not a budget cutoff like the
+other two still might be.
+
+**Full 15,380-clip, 8-class pool, test set (2,109 clips):**
+
+| gate | test macro-F1 | test acc | val macro-F1 trajectory |
+|---|---|---|---|
+| **none** (plain pretrained FFN) | **0.797** | 0.800 | 0.710 -> 0.758 -> 0.767 -> 0.784 -> 0.752 -> 0.700 -> **0.788** -> 0.782 (8 ep, noisy but clearly converged near 0.78-0.79) |
+| adaptive (SwiGLU, published) | 0.594 | 0.612 | 0.149 -> 0.288 -> 0.367 -> 0.456 -> 0.482 -> 0.514 -> 0.535 -> 0.597 (8 ep, still climbing, not stopped) |
+| contact (ours, 13 ep, early-stopped) | 0.583 | 0.627 | ...0.557 (ep7) -> 0.504 (ep8) -> **0.596** (ep9, new best) -> 0.569 -> 0.565 -> 0.596 (ep12, early stop) |
+
+**`none` is the clear winner, by a wide margin** -- and it beats every pose-only baseline in the project
+too (LSTM 0.785, GRU 0.777, Transformer 0.766, pose-ST-TR+gate ~0.754-0.755), despite this being the
+harder 8-class task (those baselines were measured on an easier split in some cases). That's a genuine,
+strong, honest result on its own: **real video through a Kinetics-pretrained Timesformer, with no
+architectural tricks at all, outperforms every pose-based sequence model tried in this project.**
+
+**Both gates lose to `none` by ~0.20 macro-F1, and `contact` does not clearly beat `adaptive`** --
+0.583 vs 0.594 is within plausible single-seed noise, not a demonstrated win for the contact-conditioning
+idea. The honest read: swapping out `.intermediate`+`.output` for either gate discards 12 layers of
+Kinetics-pretrained feed-forward weights (documented caveat since this pipeline was first built), and
+that loss is costly enough that neither gate's added expressiveness earns it back within a realistic
+epoch budget -- confirmed now at full scale with a real baseline, not assumed. `contact`'s own
+conditioning signal doesn't rescue this on top of `adaptive`'s already-warm-started gate.
+
+**What this means for the architectural-novelty angle discussed with the supervisor:** gate-*replacement*
+(this design) is not the way to beat the plain pretrained model -- that's now a clean, ablation-backed
+negative result, exactly the kind of "tried it, here's why it didn't work" evidence the supervisor asked
+for. A more promising variant, not yet tried: add the contact-conditioned gate as a small residual/additive
+term *alongside* the pretrained feed-forward (frozen or fine-tuned) instead of replacing it outright --
+keeps the Kinetics pretraining intact while still letting the model's representation respond to contact
+timing. Also worth stating plainly: `none` winning this convincingly is itself a legitimate, publishable
+contribution (video + pretrained Timesformer beats pose-based GRU/LSTM/Transformer), independent of
+whether any gate variant ever wins.
+
 ## Open decisions
 - Practice/nets/shadow-batting videos (no bowler or ball) are parked; focus is match clips for now.
