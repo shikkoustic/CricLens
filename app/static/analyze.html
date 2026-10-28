@@ -5,6 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Analyse a clip · CricLens</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='14' fill='%23b42318'/><path d='M9 7c4 5 4 13 0 18M23 7c-4 5-4 13 0 18' stroke='white' stroke-width='1.6' fill='none' stroke-dasharray='2 2'/></svg>">
+  <script>
+    (() => { try {
+      const saved = localStorage.getItem("criclens-theme");
+      document.documentElement.dataset.theme =
+        saved || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+    } catch { document.documentElement.dataset.theme = "light"; } })();
+  </script>
   <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body>
@@ -18,7 +25,13 @@
         <a href="/">Home</a>
         <a href="/analyze" class="on" aria-current="page">Analyse</a>
       </nav>
-      <div id="status" class="status status-loading" role="status" hidden><span class="dot"></span><span id="status-text"></span></div>
+      <div class="topbar-right">
+        <div id="status" class="status status-loading" role="status" hidden><span class="dot"></span><span id="status-text"></span></div>
+        <button id="theme-toggle" class="icon-btn" type="button" aria-label="Switch theme" title="Switch theme">
+          <svg class="ico-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.5"/><path d="M12 2v2.6M12 19.4V22M2 12h2.6M19.4 12H22M4.9 4.9l1.9 1.9M17.2 17.2l1.9 1.9M19.1 4.9l-1.9 1.9M6.8 17.2l-1.9 1.9"/></svg>
+          <svg class="ico-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8.2 8.2 0 0 1 9.5 4a8.3 8.3 0 1 0 10.5 10.5z"/></svg>
+        </button>
+      </div>
     </div>
   </header>
 

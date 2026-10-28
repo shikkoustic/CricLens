@@ -4,8 +4,16 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>CricLens · Batting analysis</title>
-  <meta name="description" content="Batting analysis from a single delivery: find the batter, track the joints, name the shot, score the technique.">
+  <meta name="description" content="Play a clip of one delivery. CricLens finds the batter, names the shot, scores the technique and writes the coaching note.">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='14' fill='%23b42318'/><path d='M9 7c4 5 4 13 0 18M23 7c-4 5-4 13 0 18' stroke='white' stroke-width='1.6' fill='none' stroke-dasharray='2 2'/></svg>">
+  <script>
+    // Set before first paint so the page never flashes the wrong theme.
+    (() => { try {
+      const saved = localStorage.getItem("criclens-theme");
+      document.documentElement.dataset.theme =
+        saved || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+    } catch { document.documentElement.dataset.theme = "light"; } })();
+  </script>
   <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body class="home">
@@ -19,72 +27,143 @@
         <a href="/" class="on" aria-current="page">Home</a>
         <a href="/analyze">Analyse</a>
       </nav>
-      <div id="status" class="status status-loading" role="status" hidden><span class="dot"></span><span id="status-text"></span></div>
+      <div class="topbar-right">
+        <div id="status" class="status status-loading" role="status" hidden><span class="dot"></span><span id="status-text"></span></div>
+        <button id="theme-toggle" class="icon-btn" type="button" aria-label="Switch theme" title="Switch theme">
+          <svg class="ico-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.5"/><path d="M12 2v2.6M12 19.4V22M2 12h2.6M19.4 12H22M4.9 4.9l1.9 1.9M17.2 17.2l1.9 1.9M19.1 4.9l-1.9 1.9M6.8 17.2l-1.9 1.9"/></svg>
+          <svg class="ico-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8.2 8.2 0 0 1 9.5 4a8.3 8.3 0 1 0 10.5 10.5z"/></svg>
+        </button>
+      </div>
     </div>
   </header>
 
+  <!-- the ball flies the length of the page, section to section -->
+  <svg id="rail" class="rail" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+    <path id="rail-path" d="M 8 6 C 42 16, 72 20, 50 34 C 28 48, 20 52, 58 64 C 92 75, 72 82, 44 94" fill="none"/>
+    <path id="rail-trail" d="M 8 6 C 42 16, 72 20, 50 34 C 28 48, 20 52, 58 64 C 92 75, 72 82, 44 94" fill="none"/>
+  </svg>
+  <div id="rail-ball" class="rail-ball" aria-hidden="true"><i></i></div>
+
   <main>
-    <!-- hero: one delivery, playing behind the headline -->
+    <!-- 1. what this is -->
     <section class="hero">
-      <div class="hero-media" aria-hidden="true">
-        <video id="hero-video" muted loop playsinline preload="auto"></video>
-        <div class="hero-scrim"></div>
-        <div class="hero-grass"></div>
-      </div>
       <div class="wrap hero-inner">
-        <h1 class="hero-title">
-          <span class="line">One delivery.</span>
-          <span class="line accent">Read frame by frame.</span>
-        </h1>
-        <p class="hero-sub">CricLens finds the striker, tracks every joint through the shot, names the stroke and scores the technique.</p>
-        <div class="hero-actions">
-          <a class="btn btn-primary btn-lg" href="/analyze">Analyse a clip</a>
+        <div class="hero-copy">
+          <p class="eyebrow">Pose-based batting analysis</p>
+          <h1 class="hero-title">Every delivery<br><em>tells you something.</em></h1>
+          <p class="hero-sub">Play one clip. CricLens picks out the striker, follows every joint through the
+            stroke, and turns the movement into a shot, a score and a coaching note.</p>
+          <div class="hero-actions">
+            <a class="btn btn-primary btn-lg" href="/analyze">Analyse a clip</a>
+            <a class="btn btn-lg btn-ghost" href="#predict">See what it does</a>
+          </div>
         </div>
+
+        <!-- the delivery, drawn: run-up, release, the shot, the joints lighting up -->
+        <figure class="crease" aria-label="A delivery being bowled and played">
+          <svg viewBox="0 0 440 340" class="crease-art">
+            <!-- outfield, then the pitch running away from the viewer -->
+            <ellipse class="turf" cx="220" cy="246" rx="208" ry="78"/>
+            <path class="strip" d="M150 318 L196 128 L252 128 L312 318 Z"/>
+            <g class="creases">
+              <path d="M163 270 H300"/>
+              <path d="M191 146 H258"/>
+            </g>
+            <!-- bowler's end stumps, small because they are far away -->
+            <g class="stumps far"><path d="M216 128 v-20 M222 128 v-20 M228 128 v-20"/><path d="M214 109 h16"/></g>
+            <!-- striker's end -->
+            <g class="stumps near"><path d="M180 272 v-38 M188 272 v-38 M196 272 v-38"/><path d="M177 235 h22"/></g>
+            <g class="batter">
+              <circle class="joint head" cx="246" cy="168" r="11"/>
+              <path class="bone" d="M246 179 V222"/>
+              <path class="bone" d="M246 190 L224 206 M246 190 L272 198"/>
+              <path class="bone" d="M246 222 L228 272 M246 222 L266 268"/>
+              <path class="bat" d="M272 198 L292 248"/>
+              <g class="joints">
+                <circle cx="246" cy="190" r="4.6"/><circle cx="246" cy="222" r="4.6"/>
+                <circle cx="224" cy="206" r="4.6"/><circle cx="272" cy="198" r="4.6"/>
+                <circle cx="228" cy="272" r="4.6"/><circle cx="266" cy="268" r="4.6"/>
+              </g>
+            </g>
+            <path class="cherry-path" d="M224 136 C236 170, 252 196, 286 214" fill="none"/>
+            <circle class="cherry" cx="224" cy="136" r="7.5"/>
+          </svg>
+        </figure>
       </div>
-      <div class="seam" aria-hidden="true"></div>
+      <a class="scroll-cue" href="#predict" aria-label="Scroll down"><span></span></a>
     </section>
 
-    <!-- the delivery, as a timeline down the pitch -->
-    <section id="how" class="wrap section reveal">
-      <h2 class="section-title">From release to follow-through</h2>
-      <div class="pitch">
-        <div class="pitch-strip" aria-hidden="true"><span class="crease c1"></span><span class="crease c2"></span><i class="travel-ball"></i></div>
-        <ol class="overs">
-          <li><b>Find the striker</b><span>Picked out of the bowler, keeper and fielders.</span></li>
-          <li><b>Track the joints</b><span>17 points, backswing through follow-through.</span></li>
-          <li><b>Name the shot</b><span>Eight strokes, with a confidence.</span></li>
-          <li><b>Score &amp; coach</b><span>Technique rated, feedback written.</span></li>
-        </ol>
-      </div>
-    </section>
-
-    <!-- what it was built on -->
-    <section class="scoreboard-wrap reveal">
+    <!-- 2. the shot -->
+    <section id="predict" class="stage reveal">
       <div class="wrap">
-        <div class="scoreboard">
-          <div class="sb"><b>22,420</b><span>clips</span></div>
-          <div class="sb"><b>6</b><span>sources</span></div>
-          <div class="sb"><b>8</b><span>strokes</span></div>
-          <div class="sb"><b>0.785</b><span>macro-F1</span></div>
-          <div class="sb"><b>0.603</b><span>Spearman</span></div>
+        <p class="eyebrow">First</p>
+        <h2 class="stage-title">Which shot was that?</h2>
+        <p class="stage-sub">The joint sequence goes to a classifier trained on eight strokes. You get the call
+          and how certain it is &mdash; never a bare guess.</p>
+        <ul class="shots">
+          <li><b>Drive</b></li><li><b>Cut</b></li><li><b>Pull / Hook</b></li><li><b>Sweep</b></li>
+          <li><b>Flick / Glance</b></li><li><b>Defence</b></li><li><b>Lofted</b></li><li><b>Scoop</b></li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- 3. the score -->
+    <section class="stage stage-alt reveal">
+      <div class="wrap stage-split">
+        <div>
+          <p class="eyebrow">Then</p>
+          <h2 class="stage-title">How good was it?</h2>
+          <p class="stage-sub">A scorer trained on coaches' ratings puts a number on the technique, and shows
+            where it sits against the strokes in the reference set. Stride and hand speed come straight off the
+            footage when the crease is clear enough to measure.</p>
+        </div>
+        <div class="dial-demo" aria-hidden="true">
+          <svg viewBox="0 0 160 160" class="dial">
+            <circle class="dial-bg" cx="80" cy="80" r="64"/>
+            <circle id="dial-fg" class="dial-fg" cx="80" cy="80" r="64"/>
+            <path class="dial-seam" d="M34 34c18 22 18 70 0 92"/><path class="dial-seam" d="M126 34c-18 22-18 70 0 92"/>
+          </svg>
+          <div class="dial-num"><b id="dial-val">0.0</b><span>/ 10</span></div>
         </div>
       </div>
     </section>
 
-    <!-- limits -->
-    <section class="wrap section reveal">
-      <div class="honest-card">
-        <h2 class="section-title">What the numbers can't say</h2>
-        <p>The five body-part ratings come from a coached dataset where they move together far more than
-          five independent judgements would. Read the overall score as the signal and the breakdown as
-          a secondary view. Every sample clip here is held out from training.</p>
+    <!-- 4. the coach -->
+    <section class="stage reveal">
+      <div class="wrap stage-split">
+        <div>
+          <p class="eyebrow">Finally</p>
+          <h2 class="stage-title">What do you work on?</h2>
+          <p class="stage-sub">The measurements are handed to a language model running on this machine, which
+            writes them up the way a coach would &mdash; what held up, what to work on, and a drill to go away with.</p>
+          <a class="btn btn-primary btn-lg" href="/analyze">Try it on a clip</a>
+        </div>
+        <figure class="coach-demo">
+          <div class="coach-bubble">
+            <p><b>Good drive.</b> Head stayed over the ball and the front foot got to the pitch of it.</p>
+            <p><b>Work on</b> the hands &mdash; the bat face turns early, which is why it squared up.</p>
+            <p class="drill">Drill · throwdowns on off stump, play late under your eyes.</p>
+          </div>
+        </figure>
       </div>
-    </section>
-
-    <section class="wrap section cta-section reveal">
-      <a class="btn btn-primary btn-lg" href="/analyze">Analyse a clip</a>
     </section>
   </main>
+
+  <footer class="site-footer">
+    <div class="wrap footer-inner">
+      <div>
+        <p class="eyebrow">About</p>
+        <p class="footer-about">CricLens analyses a single cricket delivery end to end &mdash; striker detection,
+          pose tracking, shot classification, technique scoring and coaching feedback. Everything runs on your
+          own machine; clips are never uploaded anywhere.</p>
+      </div>
+      <div class="footer-by">
+        <p class="eyebrow">Built by</p>
+        <p><b>Shikhar Srivastava</b></p>
+        <p><b>Vanshika Gupta</b></p>
+      </div>
+    </div>
+  </footer>
 
   <script src="/static/home.js"></script>
 </body>

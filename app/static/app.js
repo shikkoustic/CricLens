@@ -31,6 +31,13 @@ async function pollHealth() {
   setTimeout(pollHealth, 1500);
 }
 
+// ---------- theme ----------
+document.getElementById("theme-toggle")?.addEventListener("click", () => {
+  const next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+  document.documentElement.dataset.theme = next;
+  try { localStorage.setItem("criclens-theme", next); } catch { /* private window */ }
+});
+
 // ---------- input ----------
 function setChoice(c) {
   choice = c;
