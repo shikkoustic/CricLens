@@ -694,5 +694,72 @@ timing. Also worth stating plainly: `none` winning this convincingly is itself a
 contribution (video + pretrained Timesformer beats pose-based GRU/LSTM/Transformer), independent of
 whether any gate variant ever wins.
 
+### Update 2026-10-28: 'contact_residual' beats the plain pretrained model -- promising, needs multi-seed confirmation
+
+Built and ran the residual/additive variant proposed above: `contact_residual` keeps the pretrained
+feed-forward completely untouched and adds a small (~10.6M param, ~8.8% of the base model) branch
+alongside it via a forward hook on `TimesformerOutput`, conditioned on each frame's distance to the
+ball-bat contact moment. Verified bit-identical to `none` at init (zero-initialized correction, not an
+approximation) before spending any GPU time. Ran on the same 8-class pool as `none`/`adaptive`/`contact`
+(before the scoop/sweep exclusion below), so directly comparable:
+
+| gate | test macro-F1 | val macro-F1 trajectory |
+|---|---|---|
+| **contact_residual** | **0.811** | 0.725 -> 0.771 -> 0.759 -> 0.772 -> 0.774 -> **0.799** (ep6, best) -> 0.789 -> 0.793 |
+| none (plain pretrained FFN) | 0.797 | 0.710 -> 0.758 -> 0.767 -> 0.784 -> 0.752 -> 0.700 -> 0.788 -> 0.782 |
+| adaptive (SwiGLU, published) | 0.594 | (slow climb, still improving at ep8) |
+| contact (gate-replacement, ours) | 0.583 | (converged via early-stop at ep12 of 13) |
+
+`contact_residual` beats `none` by ~1.4 points, and the training curve itself supports the design story:
+fast, clean convergence (train loss 0.962 -> 0.158, smoothly) matching `none`'s behaviour, not the slow
+climb from near-random that `adaptive`/`contact` showed -- consistent with "the pretrained weights are
+genuinely intact, this isn't relearning the feed-forward from scratch."
+
+**Caveat, stated plainly before calling this a win:** this is a single seed, and this project has been
+burned by single-seed gaps of similar size before -- the original "adaptive beats simple" pose-classifier
+finding (PROGRESS.md 2026-10-26) looked just as convincing at single-seed (0.768 vs 0.759) and evaporated
+under 3-seed testing (0.754 vs 0.755, a tie). A ~1.4-point gap here is in the same range that earlier
+"result" turned out to be noise at. **Not confirmed as a real win until multi-seed tested** -- next step,
+not yet run.
+
+### Update 2026-10-28: dropped 'scoop'/'sweep' -- 6 balanced classes going forward
+
+`scoop` has only 96 clips total (70 train) and `sweep` only 838, both far below the other 6 classes
+(1,898-3,402 each). macro-F1 weights every class equally regardless of size, so a class the model can
+barely learn from a handful of examples drags the metric down out of proportion to how often it matters.
+Narrowed the pool to the 6 better-represented, more evenly-sized classes (14,446 clips, <2x spread:
+1,898-3,402) for a more honestly comparable task going forward -- applied to all gate scripts, but **not
+yet re-run**: the `none`/`adaptive`/`contact`/`contact_residual` numbers above are all still on the old
+8-class pool. A fresh `none` baseline on the 6-class pool is needed before any 6-class result can be
+judged against anything.
+
+### Update 2026-10-28: input-quality scan -- data is clean, one real but modest pattern found
+
+In response to a direct question about whether the pipeline's input (8 sampled frames per clip, cropped
+to the tracked batter box) is actually clean, ran an automated scan over a stratified sample of 1,500
+real clips (250 per class across the 6 kept shot types, all 6 sources) using the actual production
+`read_clip_pixels`/`padded_crop` code, not a reimplementation -- plus visual inspection of several
+real rendered frame sequences (not just the scan's numbers).
+
+**Result: the data holds up.** 0 decode failures across the sample. Visually, sampled sequences (defence,
+cut, drive, pull_hook across 4 different sources) show the batter clearly tracked through the actual shot
+motion -- not noise. Box sizes, brightness all in sane ranges.
+
+**One real, now-quantified pattern:** black padding (box exceeding the frame) climbs steadily from the
+start to the end of a clip's sampled window -- 0.04% at the first of the 8 frames to 2.45% at the last.
+Visual inspection confirmed why: broadcast footage sometimes cuts to a replay/graphic right after the
+shot, and the box tracker doesn't follow the cut, corrupting that one sampled frame (e.g.
+`cs10k_straight-drive-vid531-63`'s last frame is a sponsor graphic, not the batter). But it's modest in
+aggregate -- no clip in the sample has any frame more than 50% black padding -- so it's noise at the
+margins, not a pipeline-breaking bug. `cricshot10k` is consistently the noisiest of the 6 sources (larger,
+less precise boxes, more padding than the other 5 combined).
+
+**Also checked whether 8 sampled frames is enough temporal coverage**, using real window-length data: the
+median window (ball release to follow-through) is 27 source frames at 25-30fps (~0.96s), so 8 samples
+land roughly every 4 source frames (~130-160ms) -- denser per-second coverage than Timesformer's own
+Kinetics pretraining (8 frames across several-second clips there). No ablation run on frame count, but
+nothing in the data suggests 8 is starving the model of signal, consistent with clean, un-plateaued
+training curves across all four gates above.
+
 ## Open decisions
 - Practice/nets/shadow-batting videos (no bowler or ball) are parked; focus is match clips for now.
