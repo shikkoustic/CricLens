@@ -746,13 +746,16 @@ cut, drive, pull_hook across 4 different sources) show the batter clearly tracke
 motion -- not noise. Box sizes, brightness all in sane ranges.
 
 **One real, now-quantified pattern:** black padding (box exceeding the frame) climbs steadily from the
-start to the end of a clip's sampled window -- 0.04% at the first of the 8 frames to 2.45% at the last.
-Visual inspection confirmed why: broadcast footage sometimes cuts to a replay/graphic right after the
-shot, and the box tracker doesn't follow the cut, corrupting that one sampled frame (e.g.
-`cs10k_straight-drive-vid531-63`'s last frame is a sponsor graphic, not the batter). But it's modest in
-aggregate -- no clip in the sample has any frame more than 50% black padding -- so it's noise at the
-margins, not a pipeline-breaking bug. `cricshot10k` is consistently the noisiest of the 6 sources (larger,
-less precise boxes, more padding than the other 5 combined).
+start to the end of a clip's sampled window -- confirmed on the full 1,500-clip scan at 0.036% (first of
+the 8 frames) to 3.0% (last). Visual inspection confirmed why: broadcast footage sometimes cuts to a
+replay/graphic right after the shot, and the box tracker doesn't follow the cut, corrupting that one
+sampled frame (e.g. `cs10k_straight-drive-vid531-63`'s last frame is a sponsor graphic, not the batter).
+But it's modest in aggregate -- 0/1,500 clips have any frame more than 50% black padding -- so it's noise
+at the margins, not a pipeline-breaking bug. `cricshot10k` is consistently the noisiest of the 6 sources
+(largest, least precise boxes, mean_zero_frac ~8x the next-worst source). At the full 1,500-clip scale,
+`lofted` also stood out as a soft spot independent of source (mean_zero_frac ~2-3x the other 5 classes,
+largest average box area) -- plausibly because a lofted shot's full swing arc (bat raised high through
+follow-through) is harder for the box tracker to keep bounded than a more compact shot.
 
 **Also checked whether 8 sampled frames is enough temporal coverage**, using real window-length data: the
 median window (ball release to follow-through) is 27 source frames at 25-30fps (~0.96s), so 8 samples
