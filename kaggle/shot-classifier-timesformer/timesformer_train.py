@@ -12,6 +12,12 @@ arXiv:2002.05202), or 'contact' (this project's own architectural novelty, added
 frame -- see GatedFeedForward's docstring). 'none' keeps the original pretrained GELU feed-forward,
 as the control.
 
+PROGRESS.md 2026-10-28: on the full pool, 'adaptive' and 'contact' both lost to 'none' by ~0.20 test
+macro-F1 -- replacing the pretrained feed-forward costs more than either gate earns back. 'contact_residual'
+(added 2026-10-28) is the fix: an additive branch alongside the UNCHANGED pretrained feed-forward (a
+forward hook on TimesformerOutput, not a replacement -- see ContactResidualGate's docstring), so it starts
+bit-identical to 'none' rather than needing a warm-start approximation.
+
 IMPORTANT caveat, stated honestly: swapping intermediate+output discards that layer's PRETRAINED
 feed-forward weights (replaced with a freshly-initialized gated block) -- only the attention layers keep
 Kinetics pretraining when gate != 'none'. Verified against the actual HF source
@@ -306,12 +312,59 @@ class GateWrapper(nn.Module):
         return self.model(pixel_values=pixel_values)
 
 
+class ContactResidualGate(nn.Module):
+    """PROGRESS.md 2026-10-28: 'contact' and 'adaptive' (both REPLACE intermediate+output, discarding
+    the pretrained Kinetics feed-forward weights) lost to plain 'none' by ~0.20 test macro-F1 on the
+    full pool -- confirmed, not assumed, with a real baseline. The likely reason: replacing 12 layers'
+    worth of pretrained feed-forward transforms costs more than either gate's added expressiveness earns
+    back. This gate doesn't replace anything: it's a small additive branch registered as a forward hook
+    on `layer.output` (TimesformerOutput), so the pretrained `intermediate`+`output` path runs completely
+    unchanged and fully used, exactly as in 'none'. The hook reads TimesformerOutput.forward's own only
+    argument (dropout(GELU(dense(x))), intermediate_size-dim -- verified against the installed
+    transformers source, same as GatedFeedForward's 'contact' did for the layout) plus the contact-timing
+    signal, and ADDS a small correction to the FFN's hidden_size-dim output, before the layer's own
+    residual sum. `proj_out` is zero-initialized, so at init this is not an approximation of 'none' the
+    way the replacement gates needed a warm-start to approximate GELU -- it is BIT-IDENTICAL to 'none',
+    verified the same way (see the init-equality check run before this was trusted on Kaggle GPU time).
+    `bottleneck` keeps the added branch small relative to a full FFN (~128*3072*2 + 128*768 =~ 0.88M
+    params/layer here vs ~4.7M/layer for a full intermediate+output pair)."""
+
+    def __init__(self, intermediate_size, hidden_size, bottleneck=128):
+        super().__init__()
+        self.proj_a = nn.Linear(intermediate_size, bottleneck)
+        self.proj_b = nn.Linear(intermediate_size, bottleneck)
+        self.contact_proj = nn.Linear(1, bottleneck)
+        self.proj_out = nn.Linear(bottleneck, hidden_size)
+        nn.init.zeros_(self.proj_out.weight); nn.init.zeros_(self.proj_out.bias)
+        self.contact_signal = None  # (batch, seq_len, 1), set externally per forward pass by GateWrapper
+
+    def forward(self, intermediate_act):
+        b = self.proj_b(intermediate_act)
+        if self.contact_signal is not None:
+            b = b + self.contact_proj(self.contact_signal.to(intermediate_act.dtype))
+        h = self.proj_a(intermediate_act) * torch.sigmoid(b)
+        return self.proj_out(h)
+
+
+def _residual_hook(gate_module):
+    def hook(module, inputs, output):
+        return output + gate_module(inputs[0])
+    return hook
+
+
 def build_model(n_classes, gate, device):
     model = TimesformerForVideoClassification.from_pretrained(
         "facebook/timesformer-base-finetuned-k400", num_labels=n_classes, ignore_mismatched_sizes=True)
     gate_layers = []
-    if gate != "none":
-        cfg = model.config
+    cfg = model.config
+    if gate == "contact_residual":
+        for layer in model.timesformer.encoder.layer:
+            g = ContactResidualGate(cfg.intermediate_size, cfg.hidden_size)
+            layer.output.register_forward_hook(_residual_hook(g))
+            layer.residual_gate = g  # plain attribute assignment registers it as a submodule (standard
+            # nn.Module.__setattr__ behaviour) -- needed so g's params show up in .parameters()/.to(device)
+            gate_layers.append(g)
+    elif gate != "none":
         for layer in model.timesformer.encoder.layer:
             dense, out = layer.intermediate.dense, layer.output.dense  # pretrained weights, before replacing
             g = GatedFeedForward(cfg.hidden_size, cfg.intermediate_size, gate=gate,
