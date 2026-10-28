@@ -11,6 +11,16 @@ if (toggle) {
   });
 }
 
+// ---------- hero clip ----------
+// Broadcast footage served from data/, so it may not exist on this machine: only reveal the
+// viewport's video once it can actually play, and drop it quietly if it cannot.
+const clip = document.getElementById("hero-clip");
+if (clip) {
+  clip.addEventListener("canplay", () => { clip.classList.add("ready"); clip.play().catch(() => {}); }, { once: true });
+  clip.addEventListener("error", () => clip.closest(".vp-frame")?.classList.add("no-clip"), { once: true });
+  clip.src = "/api/hero.mp4";
+}
+
 // ---------- the ball flies the page ----------
 // One SVG path spans the whole document; scroll position picks the point along it, so the ball
 // arcs from section to section and the dashed trail fills in behind it like a replay graphic.

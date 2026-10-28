@@ -437,3 +437,42 @@ main { padding: 32px 20px 24px; }
   .stage { padding: 72px 0; }
   .rail, .rail-ball { display: none; }
 }
+
+/* hero viewport: the clip, framed like a tracking monitor */
+.viewport { margin: 0; }
+.vp-frame { position: relative; aspect-ratio: 16/10; border-radius: 16px; overflow: hidden;
+  background: linear-gradient(160deg, var(--surface-2), var(--surface));
+  border: 1px solid var(--border); box-shadow: var(--shadow-lg); }
+.vp-video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover;
+  opacity: 0; transition: opacity .9s ease; transform: scale(1.34) translateY(-4%); }
+.vp-video.ready { opacity: 1; }
+/* broadcast scoreboards sit at different heights per clip, so fade the lower strip rather than
+   trying to crop past all of them */
+.vp-frame::after { content: ""; position: absolute; inset: auto 0 0 0; height: 34%; pointer-events: none;
+  background: linear-gradient(180deg, transparent, color-mix(in srgb, #050c08 86%, transparent) 72%); }
+.vp-grid { position: absolute; inset: 0; pointer-events: none; opacity: .4;
+  background:
+    linear-gradient(transparent 0 calc(50% - 1px), color-mix(in srgb, var(--accent) 30%, transparent) 50%, transparent calc(50% + 1px)),
+    linear-gradient(90deg, transparent 0 calc(50% - 1px), color-mix(in srgb, var(--accent) 30%, transparent) 50%, transparent calc(50% + 1px)),
+    repeating-linear-gradient(90deg, color-mix(in srgb, var(--accent) 11%, transparent) 0 1px, transparent 1px 72px),
+    repeating-linear-gradient(0deg, color-mix(in srgb, var(--accent) 11%, transparent) 0 1px, transparent 1px 72px); }
+.vp-corner { position: absolute; z-index: 2; width: 20px; height: 20px; border: 2px solid color-mix(in srgb, var(--accent) 75%, transparent); }
+.vp-corner.tl { top: 12px; left: 12px; border-right: 0; border-bottom: 0; border-radius: 5px 0 0 0; }
+.vp-corner.tr { top: 12px; right: 12px; border-left: 0; border-bottom: 0; border-radius: 0 5px 0 0; }
+.vp-corner.bl { bottom: 12px; left: 12px; border-right: 0; border-top: 0; border-radius: 0 0 0 5px; }
+.vp-corner.br { bottom: 12px; right: 12px; border-left: 0; border-top: 0; border-radius: 0 0 5px 0; }
+.vp-top { position: absolute; z-index: 2; top: 14px; left: 42px; right: 42px; display: flex; align-items: center; justify-content: space-between; }
+.vp-tag { display: inline-flex; align-items: center; gap: 7px; padding: 5px 11px; border-radius: 999px; font-size: 11.5px;
+  font-weight: 650; letter-spacing: .08em; text-transform: uppercase; color: #eafff5;
+  background: color-mix(in srgb, #06140e 64%, transparent); border: 1px solid color-mix(in srgb, var(--accent) 55%, transparent); }
+.vp-rec { width: 7px; height: 7px; border-radius: 50%; background: var(--ball); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ball) 28%, transparent); }
+@media (prefers-reduced-motion: no-preference) { .vp-rec { animation: rec 1.6s ease-in-out infinite; } }
+@keyframes rec { 50% { opacity: .35; } }
+.vp-mono { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; font-size: 11.5px;
+  letter-spacing: .04em; color: #cfe6da; }
+.vp-chips { position: absolute; z-index: 2; left: 16px; right: 16px; bottom: 16px; display: flex; gap: 8px; flex-wrap: wrap; }
+.chip { display: inline-flex; align-items: center; gap: 8px; padding: 7px 12px; border-radius: 10px;
+  background: color-mix(in srgb, #06140e 62%, transparent); border: 1px solid rgba(255,255,255,.14);
+  backdrop-filter: blur(6px); }
+.chip b { font-size: 10.5px; font-weight: 650; letter-spacing: .09em; text-transform: uppercase; color: #9fb8ab; }
+.vp-frame.no-clip .vp-video, .vp-frame.no-clip .vp-chips { display: none; }

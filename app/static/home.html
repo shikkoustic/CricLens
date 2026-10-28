@@ -60,34 +60,22 @@
         </div>
 
         <!-- the delivery, drawn: run-up, release, the shot, the joints lighting up -->
-        <figure class="crease" aria-label="A delivery being bowled and played">
-          <svg viewBox="0 0 440 340" class="crease-art">
-            <!-- outfield, then the pitch running away from the viewer -->
-            <ellipse class="turf" cx="220" cy="246" rx="208" ry="78"/>
-            <path class="strip" d="M150 318 L196 128 L252 128 L312 318 Z"/>
-            <g class="creases">
-              <path d="M163 270 H300"/>
-              <path d="M191 146 H258"/>
-            </g>
-            <!-- bowler's end stumps, small because they are far away -->
-            <g class="stumps far"><path d="M216 128 v-20 M222 128 v-20 M228 128 v-20"/><path d="M214 109 h16"/></g>
-            <!-- striker's end -->
-            <g class="stumps near"><path d="M180 272 v-38 M188 272 v-38 M196 272 v-38"/><path d="M177 235 h22"/></g>
-            <g class="batter">
-              <circle class="joint head" cx="246" cy="168" r="11"/>
-              <path class="bone" d="M246 179 V222"/>
-              <path class="bone" d="M246 190 L224 206 M246 190 L272 198"/>
-              <path class="bone" d="M246 222 L228 272 M246 222 L266 268"/>
-              <path class="bat" d="M272 198 L292 248"/>
-              <g class="joints">
-                <circle cx="246" cy="190" r="4.6"/><circle cx="246" cy="222" r="4.6"/>
-                <circle cx="224" cy="206" r="4.6"/><circle cx="272" cy="198" r="4.6"/>
-                <circle cx="228" cy="272" r="4.6"/><circle cx="266" cy="268" r="4.6"/>
-              </g>
-            </g>
-            <path class="cherry-path" d="M224 136 C236 170, 252 196, 286 214" fill="none"/>
-            <circle class="cherry" cx="224" cy="136" r="7.5"/>
-          </svg>
+        <figure class="viewport" aria-label="A delivery being analysed">
+          <div class="vp-frame">
+            <video id="hero-clip" class="vp-video" muted loop playsinline preload="auto"></video>
+            <div class="vp-grid" aria-hidden="true"></div>
+            <span class="vp-corner tl" aria-hidden="true"></span><span class="vp-corner tr" aria-hidden="true"></span>
+            <span class="vp-corner bl" aria-hidden="true"></span><span class="vp-corner br" aria-hidden="true"></span>
+            <div class="vp-top">
+              <span class="vp-tag"><i class="vp-rec"></i>Tracking</span>
+              <span class="vp-mono">30 FPS</span>
+            </div>
+            <div class="vp-chips">
+              <span class="chip"><b>Shot</b><span class="vp-mono">Drive</span></span>
+              <span class="chip"><b>Stride</b><span class="vp-mono">1.12 m</span></span>
+              <span class="chip"><b>Hand speed</b><span class="vp-mono">14.5 m/s</span></span>
+            </div>
+          </div>
         </figure>
       </div>
       <a class="scroll-cue" href="#predict" aria-label="Scroll down"><span></span></a>
