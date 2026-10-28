@@ -86,13 +86,22 @@ IMAGENET_MEAN = np.array([0.485, 0.456, 0.406], np.float32)
 IMAGENET_STD = np.array([0.229, 0.224, 0.225], np.float32)
 
 
+EXCLUDED_SHOTS = {"other", "sweep", "scoop"}  # PROGRESS.md 2026-10-28: 'scoop' has only 96 clips total
+# (70 train) and 'sweep' only 838 -- both far too thin next to the other 6 classes (1,898-3,402 each),
+# and macro-F1 weights every class equally regardless of size, so a class the model can barely learn
+# from a handful of examples drags the metric down out of proportion to how often it matters in practice.
+# Dropping both for a more honestly-balanced 6-class task (1,898-3,402 range, <2x spread) rather than
+# padding the class count for its own sake.
+
+
 def load_labelled_clips(limit=None):
-    """All 6 sources, all 8 shot types (~15,380 clips) -- verified before using it that every
-    non-CricketVision source's kps.npz has the same 'boxes'/'window' fields in the same format
-    (checked ipl2023 directly), and that clips/<source>/<clip_id>.mp4 exists in the dataset for every
-    source (confirmed via the dataset file listing), so VideoDataset's per-row r.source lookup just works."""
+    """6 sources, 6 balanced-ish shot types (14,446 clips, EXCLUDED_SHOTS dropped) -- verified before
+    using it that every non-CricketVision source's kps.npz has the same 'boxes'/'window' fields in the
+    same format (checked ipl2023 directly), and that clips/<source>/<clip_id>.mp4 exists in the dataset
+    for every source (confirmed via the dataset file listing), so VideoDataset's per-row r.source lookup
+    just works."""
     idx = pd.read_parquet(f"{PROC}/data/processed/pose_index.parquet")
-    d = idx[idx.train_ready & (idx.shot != "other")][
+    d = idx[idx.train_ready & ~idx.shot.isin(EXCLUDED_SHOTS)][
         ["clip_id", "shot", "split", "source", "handedness", "kps_path"]]
     limit = limit or (LIMIT or None)
     return d.head(limit) if limit else d
