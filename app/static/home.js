@@ -17,7 +17,7 @@ if (toggle) {
 const clip = document.getElementById("hero-clip");
 if (clip) {
   clip.addEventListener("canplay", () => { clip.classList.add("ready"); clip.play().catch(() => {}); }, { once: true });
-  clip.addEventListener("error", () => clip.closest(".vp-frame")?.classList.add("no-clip"), { once: true });
+  clip.addEventListener("error", () => clip.closest(".hero-frame")?.classList.add("no-clip"), { once: true });
   clip.src = "/api/hero.mp4";
 }
 

@@ -12,11 +12,20 @@
       const saved = localStorage.getItem("criclens-theme");
       document.documentElement.dataset.theme =
         saved || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
-    } catch { document.documentElement.dataset.theme = "light"; } })();
+    } catch { document.documentElement.dataset.theme = "light"; }
+    // Browsers without scroll-driven animations fall back to the observer in home.js.
+    if (!(window.CSS && CSS.supports && CSS.supports("animation-timeline: view()")))
+      document.documentElement.classList.add("no-sdt");
+    })();
   </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,500;0,600;1,500&family=Poppins:wght@400;500;600&display=swap">
   <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body class="home">
+  <div id="progress" class="progress" aria-hidden="true"></div>
+
   <header class="topbar">
     <div class="wrap topbar-inner">
       <a class="brand" href="/" aria-label="CricLens home">
@@ -45,38 +54,37 @@
   <div id="rail-ball" class="rail-ball" aria-hidden="true"><i></i></div>
 
   <main>
-    <!-- 1. what this is -->
+    <!-- 1. what this is: the footage runs full bleed, the words sit on it -->
     <section class="hero">
-      <div class="wrap hero-inner">
+      <div class="hero-frame">
+        <video id="hero-clip" class="hero-video" muted loop playsinline preload="auto" aria-hidden="true"></video>
+        <div class="hero-scrim" aria-hidden="true"></div>
+
+        <!-- the read-out, as a tracking monitor would show it -->
+        <div class="hero-hud" aria-hidden="true">
+          <div class="hud-row">
+            <span class="hud-tag"><i class="hud-rec"></i>Tracking</span>
+            <span class="hud-fps">30 FPS</span>
+          </div>
+          <div class="hud-chips">
+            <span class="chip"><b>Shot</b><span class="mono">Drive</span></span>
+            <span class="chip"><b>Stride</b><span class="mono">1.12 m</span></span>
+            <span class="chip"><b>Hand speed</b><span class="mono">14.5 m/s</span></span>
+          </div>
+        </div>
+
         <div class="hero-copy">
-          <p class="eyebrow">Pose-based batting analysis</p>
+          <p class="eyebrow eyebrow-media">Pose-based batting analysis</p>
           <h1 class="hero-title">Every delivery<br><em>tells you something.</em></h1>
           <p class="hero-sub">Play one clip. CricLens picks out the striker, follows every joint through the
             stroke, and turns the movement into a shot, a score and a coaching note.</p>
           <div class="hero-actions">
-            <a class="btn btn-primary btn-lg" href="/analyze">Analyse a clip</a>
-            <a class="btn btn-lg btn-ghost" href="#predict">See what it does</a>
+            <a class="btn btn-lg btn-on-media" href="/analyze">Analyse a clip
+              <span class="btn-arrow"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17 17 7M9 7h8v8"/></svg></span></a>
+            <a class="btn btn-lg btn-glass" href="#predict">See what it does
+              <span class="btn-arrow"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M6 13l6 6 6-6"/></svg></span></a>
           </div>
         </div>
-
-        <!-- the delivery, drawn: run-up, release, the shot, the joints lighting up -->
-        <figure class="viewport" aria-label="A delivery being analysed">
-          <div class="vp-frame">
-            <video id="hero-clip" class="vp-video" muted loop playsinline preload="auto"></video>
-            <div class="vp-grid" aria-hidden="true"></div>
-            <span class="vp-corner tl" aria-hidden="true"></span><span class="vp-corner tr" aria-hidden="true"></span>
-            <span class="vp-corner bl" aria-hidden="true"></span><span class="vp-corner br" aria-hidden="true"></span>
-            <div class="vp-top">
-              <span class="vp-tag"><i class="vp-rec"></i>Tracking</span>
-              <span class="vp-mono">30 FPS</span>
-            </div>
-            <div class="vp-chips">
-              <span class="chip"><b>Shot</b><span class="vp-mono">Drive</span></span>
-              <span class="chip"><b>Stride</b><span class="vp-mono">1.12 m</span></span>
-              <span class="chip"><b>Hand speed</b><span class="vp-mono">14.5 m/s</span></span>
-            </div>
-          </div>
-        </figure>
       </div>
       <a class="scroll-cue" href="#predict" aria-label="Scroll down"><span></span></a>
     </section>
@@ -105,7 +113,7 @@
             where it sits against the strokes in the reference set. Stride and hand speed come straight off the
             footage when the crease is clear enough to measure.</p>
         </div>
-        <div class="dial-demo" aria-hidden="true">
+        <div class="dial-demo glass-panel" aria-hidden="true">
           <svg viewBox="0 0 160 160" class="dial">
             <circle class="dial-bg" cx="80" cy="80" r="64"/>
             <circle id="dial-fg" class="dial-fg" cx="80" cy="80" r="64"/>
@@ -124,10 +132,11 @@
           <h2 class="stage-title">What do you work on?</h2>
           <p class="stage-sub">The measurements are handed to a language model running on this machine, which
             writes them up the way a coach would &mdash; what held up, what to work on, and a drill to go away with.</p>
-          <a class="btn btn-primary btn-lg" href="/analyze">Try it on a clip</a>
+          <a class="btn btn-primary btn-lg" href="/analyze">Try it on a clip
+            <span class="btn-arrow"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17 17 7M9 7h8v8"/></svg></span></a>
         </div>
         <figure class="coach-demo">
-          <div class="coach-bubble">
+          <div class="coach-bubble glass-panel">
             <p><b>Good drive.</b> Head stayed over the ball and the front foot got to the pitch of it.</p>
             <p><b>Work on</b> the hands &mdash; the bat face turns early, which is why it squared up.</p>
             <p class="drill">Drill · throwdowns on off stump, play late under your eyes.</p>
