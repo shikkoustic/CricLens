@@ -1,0 +1,18 @@
+{
+  "id": "shikkoustic/criclens-scorer-timesformer",
+  "title": "criclens-scorer-timesformer",
+  "code_file": "timesformer_scorer.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": true,
+  "enable_internet": true,
+  "machine_shape": "NvidiaTeslaT4",
+  "dataset_sources": [
+    "shikkoustic/criclens-all"
+  ],
+  "competition_sources": [],
+  "kernel_sources": [
+    "shikkoustic/criclens-scorer-timesformer"
+  ]
+}
