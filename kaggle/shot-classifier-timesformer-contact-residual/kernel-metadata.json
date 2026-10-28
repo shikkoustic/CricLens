@@ -1,6 +1,6 @@
 {
-  "id": "vanshikagupta1813/criclens-shot-classifier-timesformer-contact-residual",
-  "title": "criclens-shot-classifier-timesformer-contact-residual",
+  "id": "vanshikagupta1813/criclens-shot-clf-timesformer-contact-res",
+  "title": "criclens-shot-clf-timesformer-contact-res",
   "code_file": "timesformer_train.py",
   "language": "python",
   "kernel_type": "script",
@@ -13,6 +13,6 @@
   ],
   "competition_sources": [],
   "kernel_sources": [
-    "vanshikagupta1813/criclens-shot-classifier-timesformer-contact-residual"
+    "vanshikagupta1813/criclens-shot-clf-timesformer-contact-res"
   ]
 }
