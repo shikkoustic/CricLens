@@ -314,7 +314,11 @@ def load_data(limit=None):
 
 
 def embed_clip(clip_id, source, kps_path, clips_root):
-    z = np.load(kps_path)
+    # kps_path is relative (as stored in pose_index.parquet), resolved against PROC -- same convention
+    # as load_data's own read of pose_index.parquet and the shot classifier's cache_clips(). This was
+    # missing on the first push: worked locally only by coincidence (CRICLENS_LOCAL happened to match
+    # cwd in the smoke test), broke for real on Kaggle where PROC=/tmp/proc != cwd.
+    z = np.load(f"{PROC}/{kps_path}")
     video_path = f"{clips_root}/{source}/{clip_id}.mp4"
     return read_clip_pixels(video_path, z["boxes"], z["window"])
 
