@@ -363,21 +363,6 @@ body.home main { padding: 0 0 24px; }
 :root[data-theme="dark"] .icon-btn .ico-sun { display: none; }
 :root[data-theme="dark"] .icon-btn .ico-moon { display: block; }
 
-/* the ball's flight path across the whole page */
-.rail { position: fixed; inset: 0; width: 100vw; height: 100vh; pointer-events: none; z-index: 0; }
-.rail path { vector-effect: non-scaling-stroke; }
-#rail-path { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 1.5 9; stroke-linecap: round; opacity: .16; }
-#rail-trail { stroke: var(--ball); stroke-width: 1.4; stroke-linecap: round; opacity: .22; }
-.rail-ball { position: fixed; top: 0; left: 0; width: 0; height: 0; pointer-events: none; z-index: 2; }
-.rail-ball i { position: absolute; width: 15px; height: 15px; margin: -7.5px 0 0 -7.5px; border-radius: 50%; display: block;
-  background: radial-gradient(circle at 33% 28%, #e8705f, var(--ball) 58%, #7d1a12);
-  box-shadow: 0 4px 12px color-mix(in srgb, var(--ball) 32%, transparent), inset 0 0 0 1px rgba(0,0,0,.18);
-  opacity: 0; transform: scale(.6); transition: opacity .4s ease, transform .4s ease; }
-.rail-ball i::before, .rail-ball i::after { content: ""; position: absolute; inset: 3px 6px; border-radius: 50%;
-  border: 1px dashed rgba(255,255,255,.75); border-top-color: transparent; border-bottom-color: transparent; }
-.rail-ball i::after { inset: 3px 6px; transform: rotate(90deg); }
-.rail-ball.lit i { opacity: 1; transform: none; }
-
 /* ============================================================
    Hero: the footage runs full bleed, the words sit on it
    ============================================================ */
@@ -455,10 +440,25 @@ body.home main { padding: 0 0 24px; }
 
 /* the eight strokes */
 .shots { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
-.shots li { padding: 20px 18px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface);
-  box-shadow: var(--shadow); transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease; }
-.shots li:hover { transform: translateY(-3px); box-shadow: var(--shadow-lg); border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
-.shots li b { font-size: 16px; font-weight: 650; }
+.shots li { min-width: 0; }
+/* each stroke opens a clip of itself, so it is a real button */
+.shots .shot { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%;
+  padding: 20px 18px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface);
+  color: inherit; font: inherit; text-align: left; cursor: pointer; box-shadow: var(--shadow);
+  transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease; }
+.shots .shot:hover { transform: translateY(-3px); box-shadow: var(--shadow-lg);
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
+.shots .shot:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.shots .shot b { font-size: 16px; font-weight: 650; }
+/* a small play triangle, drawn rather than another asset */
+.shot-cue { flex: none; width: 22px; height: 22px; border-radius: 50%; position: relative;
+  background: var(--surface-2); border: 1px solid var(--border); transition: background .18s ease; }
+.shot-cue::after { content: ""; position: absolute; top: 50%; left: 50%;
+  transform: translate(-40%, -50%); border-left: 6px solid var(--muted);
+  border-top: 4px solid transparent; border-bottom: 4px solid transparent; transition: border-left-color .18s ease; }
+.shots .shot:hover .shot-cue { background: var(--accent-soft); }
+.shots .shot:hover .shot-cue::after { border-left-color: var(--accent); }
+.shots-hint { margin: 14px 0 0; }
 
 /* scroll-driven: the page moves with the scrollbar, not on a timer */
 @media (prefers-reduced-motion: no-preference) {
@@ -532,8 +532,9 @@ body.home main { padding: 0 0 24px; }
   box-shadow: var(--shadow-lg); }
 
 
-/* scoring dial */
-.dial-demo { position: relative; display: grid; place-items: center; }
+/* scoring dial, and the net you can bat in underneath it */
+.dial-demo { position: relative; display: grid; place-items: center; gap: 18px; padding: 26px 22px 22px; }
+.dial-wrap { position: relative; display: grid; place-items: center; width: 100%; }
 .dial { width: min(300px, 76%); height: auto; transform: rotate(-90deg); }
 .dial-bg { fill: none; stroke: var(--surface-2); stroke-width: 12; }
 .dial-fg { fill: none; stroke: var(--accent); stroke-width: 12; stroke-linecap: round; }
@@ -567,7 +568,143 @@ body.home main { padding: 0 0 24px; }
   .scroll-cue { display: none; }
   .shots { grid-template-columns: repeat(2, 1fr); }
   .stage { padding: 72px 0; }
-  .rail, .rail-ball { display: none; }
 }
 
 
+/* ============================================================
+   The pitch strip: a band along the foot of the window where a batter, a
+   fielder and a bowler play out one beat each as you scroll into a section.
+   Pixel sprites, scaled by whole numbers and rendered with crisp edges so they
+   stay pixels. Everything here is decoration and is driven from home.js.
+   ============================================================ */
+:root {
+  --px: 3px;                 /* one sprite pixel; whole numbers only */
+  --px-ink: #1b241d;
+  --px-kit: #ffffff;
+  --px-kit2: #ddd8c8;
+  --px-skin: #c0834f;
+  --px-cap: #1d6b45;
+  --px-pad: #f0ece0;
+  --px-wood: #a9834a;
+  --px-ball: #b4291c;
+  --px-seam: #ffffff;
+  --px-shadow: rgba(22, 35, 26, .22);
+}
+:root[data-theme="dark"] {
+  --px-ink: #0e1711;
+  --px-kit: #f4f1e6;
+  --px-kit2: #d2cdbb;
+  --px-skin: #d09a6b;
+  --px-cap: #6fc58d;
+  --px-pad: #e4e0cf;
+  --px-wood: #c2a473;
+  --px-ball: #ef5a4c;
+  --px-seam: #ffffff;
+  --px-shadow: rgba(0, 0, 0, .5);
+}
+
+.pitch { position: fixed; left: 0; right: 0; bottom: 0; height: 84px; z-index: 6;
+  pointer-events: none; opacity: 0; transition: opacity .4s ease; }
+.pitch.on { opacity: 1; }
+.pitch .px { display: block; shape-rendering: crispEdges; image-rendering: pixelated; }
+
+/* every actor is parked on the floor of the strip and moved with translate only */
+.actor, .s-ball { position: absolute; bottom: 8px; left: 0; will-change: transform; }
+.actor { display: block; }
+
+.s-body   { width: calc(14 * var(--px)); height: calc(19 * var(--px)); }
+#act-player .s-body { height: calc(16 * var(--px)); }
+/* the bat hangs from the hands on the off side and swings about that point; the arm
+   pivots at the shoulder. Both origins are the TOP of the sprite, where the joint is. */
+.s-bat    { position: absolute; bottom: 0; left: calc(-1 * var(--px));
+            width: calc(4 * var(--px)); height: calc(12 * var(--px));
+            transform-origin: 50% 0; }
+.s-arm    { position: absolute; bottom: calc(2 * var(--px)); left: calc(11 * var(--px));
+            width: calc(4 * var(--px)); height: calc(7 * var(--px));
+            transform-origin: 50% 0; }
+.s-stumps { width: calc(12 * var(--px)); height: calc(13 * var(--px)); transform-origin: 50% 100%; }
+.s-bail   { position: absolute; width: calc(5 * var(--px)); height: calc(2 * var(--px));
+            bottom: calc(13 * var(--px)); }
+#act-bail-a { left: calc(1 * var(--px)); }
+#act-bail-b { left: calc(6 * var(--px)); }
+.s-ball   { width: calc(6 * var(--px)); height: calc(6 * var(--px)); }
+/* the coach's bubble floats clear of their head, so it is parked off the floor */
+.s-bubble { position: absolute; bottom: 8px; left: 0; opacity: 0; transform-origin: 0 100%;
+            width: calc(11 * var(--px)); height: calc(10 * var(--px)); will-change: transform, opacity; }
+
+/* the soft ellipse the cat on intervueclub sits on */
+.pitch .shadow { position: absolute; bottom: 4px; left: 0; width: 56px; height: 9px;
+  border-radius: 50%; background: radial-gradient(closest-side, var(--px-shadow), transparent);
+  opacity: 0; will-change: transform, opacity; }
+
+@media (max-width: 860px) { :root { --px: 2px; } .pitch { height: 62px; } }
+/* the strip is decoration; without motion there is nothing worth showing */
+@media (prefers-reduced-motion: reduce) { .pitch { display: none; } }
+
+/* ============================================================
+   The net: a toy over on the score card. Time the shot and the dial follows.
+   It is not the scorer — the real number comes off a clip on the Analyse page,
+   which is what the copy beside it describes.
+   ============================================================ */
+.net { width: 100%; display: grid; justify-items: center; gap: 12px;
+  border-top: 1px solid var(--glass-brd); padding-top: 18px; }
+.net-verdict { margin: 0; font-size: 15px; font-weight: 500; color: var(--text);
+  min-height: 1.5em; text-align: center; transition: opacity .2s ease; }
+
+.net-pitch { position: relative; width: 100%; max-width: 280px; height: 64px;
+  border-bottom: 2px solid var(--border); }
+.net-pitch .px { position: absolute; bottom: 0; display: block;
+  shape-rendering: crispEdges; image-rendering: pixelated; }
+.np-bowler { left: 0;  width: calc(14 * var(--px)); height: calc(16 * var(--px)); }
+.np-batter { width: calc(14 * var(--px)); height: calc(19 * var(--px)); }
+/* the stumps stand at the very end, with the striker just in front of them */
+.np-stumps { right: 0; width: calc(12 * var(--px)); height: calc(13 * var(--px));
+  transform-origin: 50% 100%; }
+.np-batter { right: calc(11 * var(--px)); }
+.np-bail { width: calc(5 * var(--px)); height: calc(2 * var(--px)); bottom: calc(13 * var(--px)); }
+#np-bail-a { right: calc(6 * var(--px)); }
+#np-bail-b { right: calc(1 * var(--px)); }
+/* the bat swings from the hands, on the side the ball is coming from */
+.np-bat { right: calc(24 * var(--px)); width: calc(4 * var(--px)); height: calc(12 * var(--px));
+  transform-origin: 50% 0; transform: rotate(34deg); }
+.np-ball { left: 0; width: calc(6 * var(--px)); height: calc(6 * var(--px)); opacity: 0; }
+
+.net-controls { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; justify-content: center; }
+.net-go { min-width: 0; }
+.net-hint { margin: 0; color: var(--muted); }
+.net-hint kbd { font-family: var(--font-mono); font-size: 11px; padding: 2px 6px; border-radius: 5px;
+  background: var(--surface-2); border: 1px solid var(--border); }
+/* while a ball is on the way the whole card is the hit area */
+.net.live { cursor: pointer; }
+
+@media (prefers-reduced-motion: reduce) {
+  /* a timing game is motion by definition; fall back to the plain read-out */
+  .net { display: none; }
+}
+
+/* ============================================================
+   Clip viewer for the stroke list. A native <dialog>, so Esc, the backdrop and the
+   focus trap are the browser's job rather than ours.
+   ============================================================ */
+.shot-dialog { width: min(680px, calc(100vw - 32px)); padding: 0; border: 1px solid var(--glass-brd);
+  border-radius: var(--radius-lg); background: var(--surface); color: var(--text);
+  box-shadow: var(--shadow-lg); overflow: hidden; }
+.shot-dialog::backdrop { background: rgba(8, 14, 10, .62); backdrop-filter: blur(5px); }
+.shot-dialog[open] { animation: sd-in .22s cubic-bezier(.2,.8,.3,1); }
+@keyframes sd-in { from { opacity: 0; transform: translateY(10px) scale(.98); } }
+@media (prefers-reduced-motion: reduce) { .shot-dialog[open] { animation: none; } }
+
+.sd-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 20px 20px 14px; }
+.sd-title { font-family: var(--font-display); font-weight: 500; font-size: 26px; letter-spacing: -.01em; }
+.sd-close { width: 38px; height: 38px; border-radius: 50%; background: var(--surface-2);
+  border: 1px solid var(--border); color: var(--muted); }
+.sd-close:hover { color: var(--text); }
+.sd-close svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+
+.sd-stage { position: relative; background: #0a140e; aspect-ratio: 16 / 9; display: grid; place-items: center; }
+.sd-stage video { width: 100%; height: 100%; object-fit: contain; display: block; }
+.sd-note { margin: 0; padding: 0 24px; text-align: center; color: var(--muted); font-size: 14px; }
+
+.sd-foot { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 14px 20px 18px; }
+.sd-foot p { margin: 0; }
+@media (max-width: 560px) { .sd-foot { flex-direction: column; align-items: stretch; } }
