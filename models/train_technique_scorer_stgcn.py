@@ -12,6 +12,15 @@ as v2, only the encoder changes, so any gap is attributable to the encoder alone
 
     python models/train_technique_scorer_stgcn.py --epochs 60
     python models/train_technique_scorer_stgcn.py --epochs 2 --limit 200   # fast smoke test
+
+Training-pair sampling: the GRU baseline exhaustively pairs every query with every same-shot exemplar
+(~8-10x the query count per epoch); each ST-GCN block does a graph einsum + Conv1d + BatchNorm, called
+twice per pair (query, exemplar), so that same exhaustive scheme turned out to be far more expensive
+per epoch here in practice (measured on Kaggle CPU: >1.5h for 6 epochs on the full set, vs the GRU's
+several minutes). RandomPairDataset below instead draws one random same-shot exemplar per query per
+access -- same fix already used for the Timesformer scorer's training loop -- cutting pairs/epoch by
+roughly that same 8-10x. predict_scores() (eval/test) is untouched: it still exemplar-averages over
+every exemplar, so only training speed changes, not what's reported.
 """
 import argparse
 import json
@@ -23,7 +32,7 @@ import numpy as np
 import pandas as pd
 import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Dataset
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -31,8 +40,35 @@ from models.evaluate import evaluate_rating, format_report  # noqa: E402
 from models.train_shot_classifier import normalise  # noqa: E402
 from models.train_technique_scorer import PARTS, TARGETS  # noqa: E402
 from models.train_technique_scorer_contrastive import (  # noqa: E402
-    EXEMPLARS, PairDataset, cache_sequences, from_residual, load_data, to_residual,
+    EXEMPLARS, cache_sequences, from_residual, load_data, to_residual,
 )
+
+
+class RandomPairDataset(Dataset):
+    """One item per query clip; each access draws a freshly-random same-shot exemplar instead of the
+    GRU baseline's exhaustive all-exemplars pairing (see module docstring)."""
+
+    def __init__(self, df: pd.DataFrame, exemplars: pd.DataFrame, cache: dict[str, np.ndarray],
+                 diff_mu: np.ndarray, diff_sd: np.ndarray, residual_targets: bool = False):
+        score_cols = [f"score_{p}" for p in TARGETS]
+        xf = to_residual if residual_targets else (lambda y: y)
+        ex_by_shot = {s: g for s, g in exemplars.groupby("shot")}
+        self.ex_y = {s: [(e.clip_id, xf(np.array([getattr(e, c) for c in score_cols], np.float32)))
+                          for e in g.itertuples()] for s, g in ex_by_shot.items()}
+        self.queries = [(r.clip_id, r.shot, xf(np.array([getattr(r, c) for c in score_cols], np.float32)))
+                         for r in df.itertuples()]
+        self.cache, self.diff_mu, self.diff_sd = cache, diff_mu, diff_sd
+
+    def __len__(self):
+        return len(self.queries)
+
+    def __getitem__(self, i):
+        qid, shot, qy = self.queries[i]
+        pool = self.ex_y[shot]
+        eid, ey = pool[np.random.randint(len(pool))]
+        diff = (qy - ey - self.diff_mu) / self.diff_sd
+        return (torch.from_numpy(self.cache[qid]), torch.from_numpy(self.cache[eid]),
+                torch.from_numpy(diff), torch.from_numpy(ey))
 
 OUT_DIR = ROOT / "models/technique_scorer_stgcn"
 
@@ -187,7 +223,7 @@ def run(epochs: int, limit: int | None, device: str, batch_size: int = 64, patie
     model = STGCNScorer(len(TARGETS), hidden=hidden).to(device)
     opt = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
 
-    dl_tr = DataLoader(PairDataset(tr, exemplars, cache, diff_mu, diff_sd, residual_targets),
+    dl_tr = DataLoader(RandomPairDataset(tr, exemplars, cache, diff_mu, diff_sd, residual_targets),
                         batch_size=batch_size, shuffle=True)
 
     def select_score(r: dict) -> float:

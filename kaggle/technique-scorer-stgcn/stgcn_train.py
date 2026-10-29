@@ -16,6 +16,15 @@ Inputs : shikkoustic/criclens-all (criclens-processed.tgz.bin -> data/processed/
           data/processed/sequences.parquet itself isn't part of the packed tarball)
 Outputs: summary_seed<k>.json (one per seed), summary_all.json (aggregate mean/std across seeds),
          stgcn_scorer_seed<k>.pt
+
+Training-pair sampling: an earlier version of this script reused the GRU baseline's exhaustive
+query x every-same-shot-exemplar pairing verbatim, and that turned out to be far more expensive per
+epoch for the ST-GCN in practice than for the GRU -- measured on Kaggle CPU at well over an hour for
+just 6 epochs, vs the GRU's several minutes, since each ST-GCN block runs a graph einsum + Conv1d +
+BatchNorm, called twice per pair. RandomPairDataset below draws one random same-shot exemplar per
+query per access instead (~8-10x fewer pairs/epoch) -- the same fix already used for the Timesformer
+scorer's training loop. predict_scores() (eval/test) still exemplar-averages over everything, so only
+training speed changes, not what gets reported.
 """
 import glob
 import io
@@ -278,23 +287,30 @@ def cache_sequences(clip_ids, kps_path_by_clip):
     return cache, failed
 
 
-class PairDataset(Dataset):
+class RandomPairDataset(Dataset):
+    """One item per query clip; each access draws a freshly-random same-shot exemplar instead of
+    exhaustively pairing with every exemplar (~8-10x fewer pairs/epoch). The GRU baseline's exhaustive
+    scheme turned out to be far more expensive per epoch for the ST-GCN in practice -- each block does
+    a graph einsum + Conv1d + BatchNorm, called twice per pair -- so this is the same fix already used
+    for the Timesformer scorer's training loop. predict_scores() (eval/test) is untouched: it still
+    exemplar-averages over everything, so only training speed changes, not what's reported."""
+
     def __init__(self, df, exemplars, cache, diff_mu, diff_sd):
         score_cols = [f"score_{p}" for p in TARGETS]
         ex_by_shot = {s: g for s, g in exemplars.groupby("shot")}
-        self.pairs = []
-        for r in df.itertuples():
-            qy = to_residual(np.array([getattr(r, c) for c in score_cols], np.float32))
-            for e in ex_by_shot[r.shot].itertuples():
-                ey = to_residual(np.array([getattr(e, c) for c in score_cols], np.float32))
-                self.pairs.append((r.clip_id, e.clip_id, qy, ey))
+        self.ex_y = {s: [(e.clip_id, to_residual(np.array([getattr(e, c) for c in score_cols], np.float32)))
+                          for e in g.itertuples()] for s, g in ex_by_shot.items()}
+        self.queries = [(r.clip_id, r.shot, to_residual(np.array([getattr(r, c) for c in score_cols], np.float32)))
+                         for r in df.itertuples()]
         self.cache, self.diff_mu, self.diff_sd = cache, diff_mu, diff_sd
 
     def __len__(self):
-        return len(self.pairs)
+        return len(self.queries)
 
     def __getitem__(self, i):
-        qid, eid, qy, ey = self.pairs[i]
+        qid, shot, qy = self.queries[i]
+        pool = self.ex_y[shot]
+        eid, ey = pool[np.random.randint(len(pool))]
         diff = (qy - ey - self.diff_mu) / self.diff_sd
         return (torch.from_numpy(self.cache[qid]), torch.from_numpy(self.cache[eid]),
                 torch.from_numpy(diff), torch.from_numpy(ey))
@@ -419,7 +435,7 @@ def run_one_seed(seed, d, exemplars, cache, device, epochs=80, batch_size=64, pa
 
     model = STGCNScorer(len(TARGETS), hidden=hidden).to(device)
     opt = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
-    dl_tr = DataLoader(PairDataset(tr, exemplars, cache, diff_mu, diff_sd), batch_size=batch_size, shuffle=True)
+    dl_tr = DataLoader(RandomPairDataset(tr, exemplars, cache, diff_mu, diff_sd), batch_size=batch_size, shuffle=True)
 
     def select_score(r):
         return r["mean_spearman"] + r["mean_partial_spearman_vs_overall"] if select_metric == "combined" else r["mean_spearman"]
