@@ -127,8 +127,10 @@ the full paper text (arxiv.org/html/2510.09187v1), not just the abstract.**
 - **The opening.** Kang attributes the gap to *"differences in dataset splits, evaluation code, or minor
   implementation details not specified in the papers"* — **he never diagnoses near-duplicate leakage and
   never audits the data.** His own 92.25% is on a stratified random, ungrouped split of CricShot10, the
-  dataset where the CricLens manifest build found **157 verified duplicate clusters, 75 spanning its own
-  train/val/test folders**.
+  dataset where the CricLens manifest build found **157 verified duplicate clusters, 74 spanning its own
+  train/val/test folders (38 touching test)** -- all 157 manually re-verified 2026-10-18 (frame-aligned
+  diff + scoreboard-level visual check on every elevated/sampled pair + full visual scan), zero false
+  positives.
 - **Relevance.** Legitimises a leakage-audited re-baselining contribution, and leaves the root cause open
   for us to supply. Also a usable example in its own right: a paper built specifically to expose
   reproducibility problems that has real, checkable errors of its own (the 57.7% mismatch, the 1894 vs 1888
@@ -772,7 +774,8 @@ pre-trained models and never retrain on enhanced images.
 ### ✓ CONFIRMED and strengthened — Gap 3 (leakage)
 I3D-AE-LSTM: random 75/15/10, *"through trial and error"*, no grouping — on a dataset our build found to
 carry 1,156 strokes duplicated across annotator folders. Kang: stratified random seed 27 on CricShot10,
-where we found 157 duplicate clusters with 75 spanning its own official splits. Published precedent for
+where we found 157 duplicate clusters with 74 spanning its own official splits (38 touching test),
+manually re-verified with zero false positives. Published precedent for
 the fix and for the contribution type: F6 (geospatial, 89% duplicates / 93–97% leakage, pHash pipeline).
 The VLM-judge paper (C6) even masks scoreboards *"to prevent data leakage"*.
 
@@ -796,6 +799,19 @@ Their own ablation: pose-only 0.79 → +I3D 0.84. Reinforced by the survey's cal
 PoseC3D (D3): *"lifted 3D poses do not provide any additional information, performs even worse than the
 original 2D poses in action recognition"* (FrameLift 90.0 / VideoLift 90.2 vs HRNet-2D 92.0 on FineGYM).
 **Test before committing** to the 3D-lifting step in `PROGRESS.md` step 5.
+
+### ⚠ SCOPE — the technique scorer covers 5 shot types, not 6 or 8, and this is structural
+CricLens's unified taxonomy (`datasets/taxonomy.py`) has 8 shot types across all 6 data sources, but only
+CricketVision carries technique scores, and CricketVision's own native annotation scheme only has 6
+stroke labels (Cut, OffDrive, Block, Glance, Hook, OnDrive -- mapping to `cut, drive, defence,
+flick_glance, pull_hook`). Verified 2026-10-24 (`docs/DATASHEET.md`): CricketVision contains **zero**
+strokes labelled `sweep`, checked at the raw native-label level across all 8,425 scored strokes, before
+any quality or split filtering -- not a scarcity issue, a structural absence. `lofted` and `scoop` were
+never in CricketVision's native taxonomy to begin with. Net result: the scorer's exemplar set and every
+reported per-shot result cover exactly 5 shot types (`cut, defence, drive, flick_glance, pull_hook`).
+State this plainly in the paper's scope/limitations section rather than leaving "8-shot taxonomy" implied
+for a task that only ever sees 5 of them -- a reviewer who checks the exemplar file would otherwise catch
+the undisclosed gap before we do.
 
 ### ⚠ NEW RISK — our five-part taxonomy is the thing ExpertAF criticises
 ExpertAF (C4): *"All the prior work assumes a fixed taxonomy of errors, and the taxonomy is designed

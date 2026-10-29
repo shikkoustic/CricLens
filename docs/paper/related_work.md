@@ -534,9 +534,10 @@ Note the 96% claim was on a *reduced 5-class* subset, not the full 10 classes.
 code, or minor implementation details not specified in the papers"* — he identifies the symptom but
 **never diagnoses near-duplicate leakage as the cause, and never audits the data.** And his own headline
 92.25% is measured on a **stratified random, ungrouped split of CricShot10** — the very dataset where the
-CricLens manifest build found **157 verified duplicate clusters, 75 of them spanning the dataset's own
-train/val/test folders**. So the paper that exposes the field's reproducibility crisis reports its own new
-benchmark on a contaminated split.
+CricLens manifest build found **157 verified duplicate clusters, 74 of them spanning the dataset's own
+train/val/test folders (38 touching the test folder)** -- all 157 manually re-verified 2026-10-18 against
+on-screen scoreboard/over/player-name text, zero false positives. So the paper that exposes the field's
+reproducibility crisis reports its own new benchmark on a contaminated split.
 
 That is a clean, defensible contribution for us: **diagnose the cause Kang left open, and re-measure on a
 leakage-controlled, match-grouped split.** We already have the dedupe machinery and the evidence.

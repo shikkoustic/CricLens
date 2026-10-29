@@ -343,5 +343,183 @@ above. The best result stands at seed 2 / plain-Spearman selection / 50 exemplar
 plain averaging: mean Spearman 0.595, R-l2 2.51, partial-rho 0.137 (vs VAE baseline's 0.601, 2.47,
 0.019).
 
+### Update 2026-10-21: where next on partial-rho -- ceiling check ruled out, part-local input built
+
+0.137 is a real, reproducible improvement over 0.019, but it's a thin signal in absolute terms, and a
+reviewer will ask "is this close to the best achievable, or is there more on the table?" Two things
+checked/built before chasing more hyperparameter tweaks (three of which already came back negative):
+
+1. **Tried to establish a ceiling first, via inter-annotator agreement -- ruled out.** If CricketVision's
+   own human raters wouldn't agree with each other on the part-specific residuals, no model could beat
+   that disagreement, and we'd know 0.137 is already close to the achievable ceiling. But per
+   `docs/DATASHEET.md`, the dataset's only "double-annotated" clips (`P3_V6` = `P4_V9` etc., 1,156
+   strokes) are copies of one rating (Spearman 0.98 between the two folders), not independent re-scores
+   -- so there is no usable inter-rater ceiling in this data. Can't check this without new annotation,
+   which is out of scope; proceeding on the model side instead.
+
+2. **Built the next concrete lever: part-localised pose input**, `models/train_technique_scorer_partlocal.py`.
+   The residual-target fix (above) changed what the model is asked to predict, but never changed what it's
+   *shown* -- one shared GRU still reads all 17 joints for every one of the 5 part heads, so even with a
+   fixed target, nothing stops that one encoding from being an equally poor source of part-specific
+   evidence for all 5. New architecture: the shared global GRU is unchanged and still drives the
+   overall-score head (same as v2's `ContrastiveScorer`), but each of the 5 part heads additionally gets
+   its own small Siamese GRU reading *only* that part's own COCO joint columns (hands head only ever sees
+   wrist+elbow columns, feet only knee+ankle, etc. -- see `JOINT_GROUPS` in the script), so each part head
+   has real, separate visual evidence instead of a slice of one shared full-body encoding. Always trains
+   on residual targets (that part of the fix stays); this isolates whether part-local *input* helps on top
+   of the already-settled target fix, not instead of it.
+
+   Smoke-tested locally (`--epochs 2 --limit 200 --device cpu`): runs end-to-end, loss decreases, eval
+   harness output shapes match the v2 script's, nothing crashes. Numbers from the smoke test itself are
+   meaningless (200 clips, 2 epochs, CPU) and weren't kept.
+
+   **Kaggle GPU run, 3 seeds, same protocol as the v2 seed check (`kaggle/technique-scorer-partlocal/`,
+   self-contained since Kaggle kernels don't see `models/` -- resamples sequences on the fly from the raw
+   `kps.npz` chunks since `data/processed/sequences.parquet` turned out not to be part of
+   `criclens-processed.tgz.bin`, caught and fixed after the first push errored on a missing file):**
+
+   | | v2 (residual + contrastive, shared input, 3-seed mean) | v3 (+ part-local input, 3-seed mean) |
+   |---|---|---|
+   | mean Spearman | 0.595 | 0.564 +/- 0.016 |
+   | mean R-l2 | 2.51 | 2.71 +/- 0.11 |
+   | partial-rho vs overall | 0.137 | **0.090 +/- 0.005** |
+
+   **Negative result, consistently across all 3 seeds (tight std, not a lucky/unlucky draw): giving each
+   part head its own joint-only encoder made every metric worse, not better.** The hypothesis -- that the
+   model needs separate visual evidence per part, not just a separate *target* -- didn't hold in this
+   implementation. Plausible reasons, untested: each local encoder only sees 2-4 joints, which may simply
+   be too little signal on its own; and `diff_g` (the shared global context fed to part heads) was
+   deliberately `.detach()`-ed to keep gradient responsibilities clean, which may have cut off more useful
+   context than it isolated noise. Both are concrete things a follow-up could try (don't detach the global
+   context; widen the joint groups to overlap, e.g. give "hands" the shoulders too for arm-chain context)
+   but **not pursued further without review** -- this is now two architecture changes deep on what was
+   already a thin signal, and the honest standing result for the paper remains v2's 0.137, not an improved
+   number. Ceiling-check (inter-annotator agreement) stays ruled out per the entry above.
+
+   **Follow-up tried: overlapping joint groups** (`train_technique_scorer_partlocal_overlap.py`,
+   `kaggle/technique-scorer-partlocal-overlap/`), testing explanation (a) above in isolation (explanation
+   (b), the detached global context, deliberately left unchanged). Each part's joint group widened to
+   include its biomechanical neighbours along the kinetic chain (e.g. "hands" = shoulders+elbows+wrists,
+   not just elbows+wrists), 6 joints per part instead of 2-4. 3-seed Kaggle result:
+
+   | | v2 (shared input) | v3 (disjoint joints) | v3b (overlapping joints) |
+   |---|---|---|---|
+   | mean Spearman | 0.595 | 0.564 +/- 0.016 | 0.560 +/- 0.008 |
+   | mean R-l2 | 2.51 | 2.71 +/- 0.11 | 2.69 +/- 0.05 |
+   | partial-rho vs overall | 0.137 | 0.090 +/- 0.005 | 0.092 +/- 0.003 |
+
+   **Still a negative result, and statistically indistinguishable from v3** (0.092 vs 0.090, well within
+   each other's std) -- widening the joint groups changed nothing. This rules out "too little signal per
+   part" as the explanation for v3's drop. The remaining untested explanation (detaching the shared global
+   context from part heads) is still open, but two architecture variants landing in the same place is
+   enough to stop here and write this up rather than try a third without review. **Standing best result
+   for the paper remains v2: residual targets + contrastive regression, shared (non-part-local) input,
+   partial-rho 0.137.**
+
+### Update 2026-10-24: encoder pretraining tried -- also negative
+
+Third lever tried (a different kind: data/representation, not architecture): pretrain the technique
+scorer's GRU encoder on the much bigger shot-classification task (16,460 `train_ready` clips, all 6
+sources -- `kaggle/shot-classifier-pretrain-gru/`, same `nn.GRU(51, 128, num_layers=2, dropout=0.2)` shape
+as `ContrastiveScorer.encoder`, so the state_dict loads with no surgery) before fine-tuning on the small
+~3,662-clip scored set with the settled v2 recipe. Rationale: the scorer has to learn "what does cricket
+motion look like" and "how do I score it" simultaneously from a small pool; a pretrained encoder arrives
+already knowing the former.
+
+Pretraining step: GRU shot classifier, all 8 shot types, test accuracy 0.772 / macro-F1 0.771 (healthy,
+in the same range as the LSTM/Transformer numbers from the original architecture comparison) -- the
+encoder itself trained fine.
+
+Fine-tuning step (`kaggle/technique-scorer-pretrained/`, both conditions x 3 seeds in one job for an
+apples-to-apples comparison under identical code/environment):
+
+| | baseline (random-init, same job) | pretrained |
+|---|---|---|
+| mean Spearman | 0.587 +/- 0.005 | 0.570 +/- 0.017 |
+| mean R-l2 | 2.56 +/- 0.05 | 2.61 +/- 0.06 |
+| partial-rho vs overall | 0.123 +/- 0.009 | **0.092 +/- 0.012** |
+
+(The baseline here, 0.587/0.123, lands close to but not identical to the earlier-reported v2 numbers --
+0.595/0.137 -- expected run-to-run noise; it confirms this job's control is a faithful re-creation of v2,
+not a broken comparison.)
+
+**Negative result: pretraining made every metric worse, not better.** Plausible cause, worth flagging
+for the writeup rather than re-testing blindly: a readout mismatch between the two tasks. The shot
+classifier reads the GRU by **mean-pooling across all 32 timesteps** (`RecurrentClassifier.forward`'s
+`out.mean(1)`); the technique scorer reads it by taking only the **final hidden state**
+(`ContrastiveScorer.embed`'s `h[-1]`). So the pretrained weights were optimised to produce a good
+*time-averaged* representation, which is not the same thing the scorer actually consumes -- a real
+architectural reason the transfer could hurt rather than help, not just "pretraining doesn't work here".
+A fixed version (e.g. retrain the classifier with a final-hidden-state readout, or have the scorer
+mean-pool too) is a legitimate follow-up, but **not run without review** -- three different levers
+(part-local disjoint, part-local overlapping, pretraining) have now come back negative in a row. Standing
+best result for the paper remains v2 (above): partial-rho 0.137.
+
+**Follow-up tried: fix the readout mismatch.** Retrained the GRU shot classifier with the readout changed
+to match `ContrastiveScorer.embed()` exactly -- final hidden state (`h[-1]`) instead of mean-pooling over
+all 32 timesteps. Pretraining step stayed healthy (test accuracy 0.780, macro-F1 0.777, basically
+unchanged from the mean-pool version's 0.772/0.771 -- the fix didn't cost classification quality). Same
+fine-tuning job re-run with the corrected encoder:
+
+| | pretrained, mean-pool readout (first attempt) | pretrained, final-hidden-state readout (fixed) | baseline (unchanged) |
+|---|---|---|---|
+| mean Spearman | 0.570 +/- 0.017 | 0.583 +/- 0.013 | 0.587 +/- 0.005 |
+| mean R-l2 | 2.61 +/- 0.06 | 2.61 +/- 0.10 | 2.56 +/- 0.05 |
+| partial-rho vs overall | 0.092 +/- 0.012 | **0.119 +/- 0.007** | **0.123 +/- 0.009** |
+
+**The fix closed almost all of the gap -- partial-rho went from clearly worse than baseline (0.092) to
+within baseline's noise band (0.119 vs 0.123 +/- 0.009; every metric's std ranges overlap).** This confirms
+the readout-mismatch diagnosis was real: that's most of why the first attempt hurt. But the corrected
+version is a **tie with baseline, not an improvement** -- pretraining no longer actively hurts, but it
+doesn't add anything measurable beyond what the small scored set already teaches the model on its own.
+Four levers tried now in this round (part-local disjoint, part-local overlapping, pretraining v1,
+pretraining v2): three clean negatives and one tie. **Standing best result for the paper remains v2:
+partial-rho 0.137**, and this round of exploration is being written up as the honest, documented search
+it was, rather than continuing to chase further variants without review.
+
+### Update 2026-10-26: ST-TR/Timesformer + NAFNet gating, on the shot classifier -- negative
+
+Following a supervisor meeting, tested the supervisor's suggestion: (a) Timesformer-style "divided"
+attention (separate temporal attention for "when" + spatial attention for "what pose") and (b) NAFNet's
+activation-free gate, plus an "adaptive"/learned version. Literature check before building: neither piece
+is novel alone -- divided spatial/temporal attention on skeleton data specifically is **ST-TR** (Plizzari
+et al., arXiv:2008.07404, 9-layer two-stream GCN-hybrid design tuned for NTU's ~56k clips); NAFNet's fixed
+gate is arXiv:2204.04676; the "adaptive" learned-gate idea is the established GLU/SwiGLU family (Shazeer,
+arXiv:2002.05202). Built a simplified, single-stream version (`models/train_shot_classifier_sttr.py`,
+`kaggle/shot-classifier-sttr-gate/`) with both gate types, deliberately on the **full shot-classification
+pool (~16,460 clips, all 6 sources)** rather than the small scored set, since the bigger architecture
+needs more data than the ~3,662-clip scoring task can offer.
+
+First (single-seed) run looked promising: adaptive gate 0.768 macro-F1 vs simple gate 0.759, both in the
+same range as existing architectures. **3-seed confirmation overturned this:**
+
+| | macro-F1 (3-seed) |
+|---|---|
+| LSTM (existing baseline) | 0.785 |
+| GRU (existing baseline) | 0.777 |
+| Transformer (existing baseline) | 0.766 |
+| ST-TR-style, simple gate | 0.755 +/- 0.003 |
+| ST-TR-style, adaptive gate | 0.754 +/- 0.010 |
+
+**Two negative findings.** (1) The adaptive-vs-simple gap was noise, not real -- 0.754 vs 0.755 is well
+within each other's std once properly seeded, exactly the kind of single-run illusion the project's own
+seed-variance protocol exists to catch. (2) The architecture underperforms all three existing baselines,
+including Transformer -- this specific simplified combination doesn't beat anything already built.
+
+**Operational note**, worth recording since it ate real time: the first 3-seed push hung for ~2h50m with
+no error signal and no way to inspect progress mid-run on Kaggle's side (`kaggle kernels output` returns
+nothing while a kernel is still running). Cancelled it (Kaggle's CLI has no separate stop command --
+`kaggle kernels delete` + re-push was the only way) and a fresh push completed normally in the expected
+~35-40 minutes, so it was very likely a stuck/queued session, not a bug in the code -- the same code,
+same data, ran to completion with sane timing the second time.
+
+Given this comes right after four negative/tied results on the technique-scoring side (2026-10-21 through
+2026-10-24), the honest read is that the "swap in a published architecture, see if it wins" line of
+search has not produced a win on either task so far. The interpretability-focused idea discussed but not
+yet built -- using this architecture's attention weights to check whether spatial attention concentrates
+on anatomically correct joints per body part, and whether temporal attention finds ball-bat contact
+unsupervised -- remains a more promising direction *if* pursued, since it doesn't depend on this
+architecture also having to win on raw accuracy; not started yet.
+
 ## Open decisions
 - Practice/nets/shadow-batting videos (no bowler or ball) are parked; focus is match clips for now.

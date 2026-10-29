@@ -94,10 +94,29 @@ detection, bat detection, striker bat segmentation, player-type detection.
 - CricketVision's "Cut" class is published as "Cut / Square Drive", so some square drives sit
   under `cut`.
 - 225 CricketVision strokes have no stroke label (`shot = other`); 198 have no handedness.
-- **The CricShot10 HF mirror's own split leaks**: 157 verified duplicate clusters inside
-  CricShot10, of which 75 span its train/val/test folders (38 involve its test folder), mostly
-  as the same clip under different file names. Results reported on that split are optimistic.
-  We ignore it and re-split. CricShot10 has no match ids, so its clips are grouped only by
+- **CricketVision contains zero `sweep` strokes, verified 2026-10-24.** The 7-option StrokeType table
+  (see the stroke-id bug above) has a slot for "Sweep", and `datasets/taxonomy.py`'s CricketVision mapping
+  has a corresponding `"Sweep": ("sweep", "leg")` entry -- but after decoding every annotation file with
+  the full, correct table, the native `stroke` label never takes that value: all 8,425 scored strokes
+  decode to exactly six labels (Cut 2,332 / OffDrive 1,667 / Block 1,544 / Glance 1,039 / Hook 827 /
+  OnDrive 807). This is not a decoding miss or a quality-filtering loss -- it holds before any
+  `train_ready` or dedup filtering is applied. CricketVision, the only source with technique scores,
+  structurally cannot produce a `sweep`-labelled, scored clip. Combined with `lofted`/`scoop` not being
+  in CricketVision's native taxonomy at all, **the technique scorer's usable shot coverage is 5 of the
+  unified taxonomy's 8 types** (`cut, defence, drive, flick_glance, pull_hook`), not 6 or 8 -- see
+  `docs/paper/dossier.md`'s scope note.
+- **The CricShot10 HF mirror's own split leaks**: 157 duplicate clusters inside CricShot10 (323
+  clips total: 149 clusters of 2, 7 of 3, 1 of 4 -- 166 "extra" copies beyond one canonical clip
+  per cluster), of which 74 span its native train/val/test folders and 38 of those touch its
+  test folder specifically (31 test+train, 6 test+val, 1 test+train+val). **All 157 clusters
+  manually re-verified 2026-10-18**: time-aligned frame-difference computed for every one of the
+  176 pairwise comparisons, every pair with an elevated score (20) plus a random sample of 20
+  low-score pairs checked at full resolution against their on-screen scoreboard/over/player-name
+  text, and all 157 clusters visually scanned on review sheets -- zero false positives found (no
+  cluster turned out to be two different matches that merely looked alike; the few
+  higher-pixel-diff cases were the same ball cut from a different camera angle, confirmed by
+  matching scoreboard text). Results reported on CricShot10's own split are optimistic. We
+  ignore it and re-split. CricShot10 has no match ids, so its clips are grouped only by
   duplicate cluster.
 - 12 KUCricShot files could not be fetched from Google Drive after 3 retries.
 - Roboflow `naveen-akash/lbw-9pb1e` (2,019 bat polygons) was skipped: its owner never

@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CricLens · Batting analysis</title>
+  <meta name="description" content="Play a clip of one delivery. CricLens finds the batter, names the shot, scores the technique and writes the coaching note.">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='14' fill='%23b42318'/><path d='M9 7c4 5 4 13 0 18M23 7c-4 5-4 13 0 18' stroke='white' stroke-width='1.6' fill='none' stroke-dasharray='2 2'/></svg>">
+  <script>
+    // Set before first paint so the page never flashes the wrong theme.
+    (() => { try {
+      const saved = localStorage.getItem("criclens-theme");
+      document.documentElement.dataset.theme =
+        saved || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+    } catch { document.documentElement.dataset.theme = "light"; }
+    // Browsers without scroll-driven animations fall back to the observer in home.js.
+    if (!(window.CSS && CSS.supports && CSS.supports("animation-timeline: view()")))
+      document.documentElement.classList.add("no-sdt");
+    })();
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,500;0,600;1,500&family=Poppins:wght@400;500;600&display=swap">
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body class="home">
+  <svg id="px-sheet" aria-hidden="true" width="0" height="0" style="position:absolute" focusable="false"><symbol id="px-batter" viewBox="0 0 14 19"><rect x="4" y="0" width="6" height="1" fill="var(--px-ink)"/><rect x="3" y="1" width="1" height="1" fill="var(--px-ink)"/><rect x="4" y="1" width="6" height="1" fill="var(--px-cap)"/><rect x="10" y="1" width="1" height="1" fill="var(--px-ink)"/><rect x="3" y="2" width="1" height="1" fill="var(--px-ink)"/><rect x="4" y="2" width="6" height="1" fill="var(--px-cap)"/><rect x="10" y="2" width="1" height="1" fill="var(--px-ink)"/><rect x="3" y="3" width="1" height="1" fill="var(--px-ink)"/><rect x="4" y="3" width="6" height="1" fill="var(--px-skin)"/><rect x="10" y="3" width="1" height="1" fill="var(--px-ink)"/><rect x="3" y="4" width="1" height="1" fill="var(--px-ink)"/><rect x="4" y="4" width="1" height="1" fill="var(--px-skin)"/><rect x="5" y="4" width="1" height="1" fill="var(--px-ink)"/><rect x="6" y="4" width="2" height="1" fill="var(--px-skin)"/><rect x="8" y="4" width="1" height="1" fill="var(--px-ink)"/><rect x="9" y="4" width="1" height="1" fill="var(--px-skin)"/><rect x="10" y="4" width="1" height="1" fill="var(--px-ink)"/><rect x="3" y="5" width="1" height="1" fill="var(--px-ink)"/><rect x="4" y="5" width="6" height="1" fill="var(--px-skin)"/><rect x="10" y="5" width="1" height="1" fill="var(--px-ink)"/><rect x="4" y="6" width="6" height="1" fill="var(--px-ink)"/><rect x="2" y="7" width="2" height="1" fill="var(--px-ink)"/><rect x="4" y="7" width="6" height="1" fill="var(--px-kit)"/><rect x="10" y="7" width="2" height="1" fill="var(--px-ink)"/><rect x="1" y="8" width="1" height="1" fill="var(--px-ink)"/><rect x="2" y="8" width="10" height="1" fill="var(--px-kit)"/><rect x="12" y="8" width="1" height="1" fill="var(--px-ink)"/><rect x="1" y="9" width="1" height="1" fill="var(--px-ink)"/><rect x="2" y="9" width="10" height="1" fill="var(--px-kit)"/><rect x="12" y="9" width="1" height="1" fill="var(--px-ink)"/><rect x="1" y="10" width="1" height="1" fill="var(--px-ink)"/><rect x="2" y="10" width="10" height="1" fill="var(--px-kit)"/><rect x="12" y="10" width="1" height="1" fill="var(--px-ink)"/><rect x="1" y="11" width="1" height="1" fill="var(--px-ink)"/><rect x="2" y="11" width="2" height="1" fill="var(--px-kit)"/><rect x="4" y="11" width="6" height="1" fill="var(--px-kit2)"/><rect x="10" y="11" width="2" height="1" fill="var(--px-kit)"/><rect x="12" y="11" width="1" height="1" fill="var(--px-ink)"/><rect x="1" y="12" width="1" height="1" fill="var(--px-ink)"/><rect x="2" y="12" width="10" height="1" fill="var(--px-kit)"/><rect x="12" y="12" width="1" height="1" fill="var(--px-ink)"/><rect x="2" y="13" width="1" height="1" fill="var(--px-ink)"/><rect x="3" y="13" width="8" height="1" fill="var(--px-kit)"/><rect x="11" y="13" width="1" height="1" fill="var(--px-ink)"/><rect x="2" y="14" width="1" height="1" fill="var(--px-ink)"/><rect x="3" y="14" width="2" height="1" fill="var(--px-kit)"/><rect x="5" y="14" width="1" height="1" fill="var(--px-ink)"/><rect x="8" y="14" width="1" height="1" fill="var(--px-ink)"/><rect x="9" y="14" width="2" height="1" fill="var(--px-kit)"/><rect x="11" y="14" width="1" height="1" fill="var(--px-ink)"/><rect x="2" y="15" width="1" height="1" fill="var(--px-ink)"/><rect x="3" y="15" width="2" height="1" fill="var(--px-pad)"/><rect x="5" y="15" width="1" height="1" fill="var(--px-ink)"/><rect x="8" y="15" width="1" height="1" fill="var(--px-ink)"/><rect x="9" y="15" width="2" height="1" fill="var(--px-pad)"/><rect x="11" y="15" width="1" height="1" fill="var(--px-ink)"/><rect x="2" y="16" width="1" height="1" fill="var(--px-ink)"/><rect x="3" y="16" width="2" height="1" fill="var(--px-pad)"/><rect x="5" y="16" width="1" height="1" fill="var(--px-ink)"/><rect x="8" y="16" width="1" height="1" fill="var(--px-ink)"/><rect x="9" y="16" width="2" height="1" fill="var(--px-pad)"/><rect x="11" y="16" width="1" height="1" fill="var(--px-ink)"/><rect x="2" y="17" width="1" height="1" fill="var(--px-ink)"/><rect x="3" y="17" width="2" height="1" fill="var(--px-pad)"/><rect x="5" y="17" width="1" height="1" fill="var(--px-ink)"/><rect x="8" y="17" width="1" height="1" fill="var(--px-ink)"/><rect x="9" y="17" width="2" height="1" fill="var(--px-pad)"/><rect x="11" y="17" width="1" height="1" fill="var(--px-ink)"/><rect x="2" y="18" width="4" height="1" fill="var(--px-ink)"/><rect x="8" y="18" width="4" height="1" fill="var(--px-ink)"/></symbol><symbol id="px-player" viewBox="0 0 14 16"><rect x="4" y="0" width="6" height="1" fill="var(--px-ink)"/><rect x="3" y="1" width="1" height="1" fill="var(--px-ink)"/><rect x="4" y="1" width="6" height="1" fill="var(--px-cap)"/><rect x="10" y="1" width="1" height="1" fill="var(--px-ink)"/><rect x="3" y="2" width="1" height="1" fill="var(--px-ink)"/><rect x="4" y="2" width="6" height="1" fill="var(--px-skin)"/><rect x="10" y="2" width="1" height="1" fill="var(--px-ink)"/><rect x="3" y="3" width="1" height="1" fill="var(--px-ink)"/><rect x="4" y="3" width="1" height="1" fill="var(--px-skin)"/><rect x="5" y="3" width="1" height="1" fill="var(--px-ink)"/><rect x="6" y="3" width="2" height="1" fill="var(--px-skin)"/><rect x="8" y="3" width="1" height="1" fill="var(--px-ink)"/><rect x="9" y="3" width="1" height="1" fill="var(--px-skin)"/><rect x="10" y="3" width="1" height="1" fill="var(--px-ink)"/><rect x="3" y="4" width="1" height="1" fill="var(--px-ink)"/><rect x="4" y="4" width="6" height="1" fill="var(--px-skin)"/><rect x="10" y="4" width="1" height="1" fill="var(--px-ink)"/><rect x="4" y="5" width="6" height="1" fill="var(--px-ink)"/><rect x="2" y="6" width="2" height="1" fill="var(--px-ink)"/><rect x="4" y="6" width="6" height="1" fill="var(--px-kit)"/><rect x="10" y="6" width="2" height="1" fill="var(--px-ink)"/><rect x="1" y="7" width="1" height="1" fill="var(--px-ink)"/><rect x="2" y="7" width="10" height="1" fill="var(--px-kit)"/><rect x="12" y="7" width="1" height="1" fill="var(--px-ink)"/><rect x="1" y="8" width="1" height="1" fill="var(--px-ink)"/><rect x="2" y="8" width="10" height="1" fill="var(--px-kit)"/><rect x="12" y="8" width="1" height="1" fill="var(--px-ink)"/><rect x="1" y="9" width="1" height="1" fill="var(--px-ink)"/><rect x="2" y="9" width="10" height="1" fill="var(--px-kit)"/><rect x="12" y="9" width="1" height="1" fill="var(--px-ink)"/><rect x="1" y="10" width="1" height="1" fill="var(--px-ink)"/><rect x="2" y="10" width="2" height="1" fill="var(--px-kit)"/><rect x="4" y="10" width="6" height="1" fill="var(--px-kit2)"/><rect x="10" y="10" width="2" height="1" fill="var(--px-kit)"/><rect x="12" y="10" width="1" height="1" fill="var(--px-ink)"/><rect x="2" y="11" width="1" height="1" fill="var(--px-ink)"/><rect x="3" y="11" width="8" height="1" fill="var(--px-kit)"/><rect x="11" y="11" width="1" height="1" fill="var(--px-ink)"/><rect x="2" y="12" width="1" height="1" fill="var(--px-ink)"/><rect x="3" y="12" width="2" height="1" fill="var(--px-kit)"/><rect x="5" y="12" width="1" height="1" fill="var(--px-ink)"/><rect x="8" y="12" width="1" height="1" fill="var(--px-ink)"/><rect x="9" y="12" width="2" height="1" fill="var(--px-kit)"/><rect x="11" y="12" width="1" height="1" fill="var(--px-ink)"/><rect x="2" y="13" width="1" height="1" fill="var(--px-ink)"/><rect x="3" y="13" width="2" height="1" fill="var(--px-kit)"/><rect x="5" y="13" width="1" height="1" fill="var(--px-ink)"/><rect x="8" y="13" width="1" height="1" fill="var(--px-ink)"/><rect x="9" y="13" width="2" height="1" fill="var(--px-kit)"/><rect x="11" y="13" width="1" height="1" fill="var(--px-ink)"/><rect x="2" y="14" width="1" height="1" fill="var(--px-ink)"/><rect x="3" y="14" width="2" height="1" fill="var(--px-kit)"/><rect x="5" y="14" width="1" height="1" fill="var(--px-ink)"/><rect x="8" y="14" width="1" height="1" fill="var(--px-ink)"/><rect x="9" y="14" width="2" height="1" fill="var(--px-kit)"/><rect x="11" y="14" width="1" height="1" fill="var(--px-ink)"/><rect x="2" y="15" width="4" height="1" fill="var(--px-ink)"/><rect x="8" y="15" width="4" height="1" fill="var(--px-ink)"/></symbol><symbol id="px-bat" viewBox="0 0 4 12"><rect x="1" y="0" width="2" height="1" fill="var(--px-ink)"/><rect x="1" y="1" width="2" height="1" fill="var(--px-ink)"/><rect x="1" y="2" width="2" height="1" fill="var(--px-ink)"/><rect x="0" y="3" width="1" height="1" fill="var(--px-ink)"/><rect x="1" y="3" width="2" height="1" fill="var(--px-wood)"/><rect x="3" y="3" width="1" height="1" fill="var(--px-ink)"/><rect x="0" y="4" width="1" height="1" fill="var(--px-ink)"/><rect x="1" y="4" width="2" height="1" fill="var(--px-wood)"/><rect x="3" y="4" width="1" height="1" fill="var(--px-ink)"/><rect x="0" y="5" width="1" height="1" fill="var(--px-ink)"/><rect x="1" y="5" width="2" height="1" fill="var(--px-wood)"/><rect x="3" y="5" width="1" height="1" fill="var(--px-ink)"/><rect x="0" y="6" width="1" height="1" fill="var(--px-ink)"/><rect x="1" y="6" width="2" height="1" fill="var(--px-wood)"/><rect x="3" y="6" width="1" height="1" fill="var(--px-ink)"/><rect x="0" y="7" width="1" height="1" fill="var(--px-ink)"/><rect x="1" y="7" width="2" height="1" fill="var(--px-wood)"/><rect x="3" y="7" width="1" height="1" fill="var(--px-ink)"/><rect x="0" y="8" width="1" height="1" fill="var(--px-ink)"/><rect x="1" y="8" width="2" height="1" fill="var(--px-wood)"/><rect x="3" y="8" width="1" height="1" fill="var(--px-ink)"/><rect x="0" y="9" width="1" height="1" fill="var(--px-ink)"/><rect x="1" y="9" width="2" height="1" fill="var(--px-wood)"/><rect x="3" y="9" width="1" height="1" fill="var(--px-ink)"/><rect x="0" y="10" width="1" height="1" fill="var(--px-ink)"/><rect x="1" y="10" width="2" height="1" fill="var(--px-wood)"/><rect x="3" y="10" width="1" height="1" fill="var(--px-ink)"/><rect x="1" y="11" width="2" height="1" fill="var(--px-ink)"/></symbol><symbol id="px-arm" viewBox="0 0 4 7"><rect x="0" y="0" width="1" height="1" fill="var(--px-ink)"/><rect x="1" y="0" width="2" height="1" fill="var(--px-kit)"/><rect x="3" y="0" width="1" height="1" fill="var(--px-ink)"/><rect x="0" y="1" width="1" height="1" fill="var(--px-ink)"/><rect x="1" y="1" width="2" height="1" fill="var(--px-kit)"/><rect x="3" y="1" width="1" height="1" fill="var(--px-ink)"/><rect x="0" y="2" width="1" height="1" fill="var(--px-ink)"/><rect x="1" y="2" width="2" height="1" fill="var(--px-kit)"/><rect x="3" y="2" width="1" height="1" fill="var(--px-ink)"/><rect x="0" y="3" width="1" height="1" fill="var(--px-ink)"/><rect x="1" y="3" width="2" height="1" fill="var(--px-kit)"/><rect x="3" y="3" width="1" height="1" fill="var(--px-ink)"/><rect x="0" y="4" width="1" height="1" fill="var(--px-ink)"/><rect x="1" y="4" width="2" height="1" fill="var(--px-kit)"/><rect x="3" y="4" width="1" height="1" fill="var(--px-ink)"/><rect x="0" y="5" width="1" height="1" fill="var(--px-ink)"/><rect x="1" y="5" width="2" height="1" fill="var(--px-skin)"/><rect x="3" y="5" width="1" height="1" fill="var(--px-ink)"/><rect x="1" y="6" width="2" height="1" fill="var(--px-ink)"/></symbol><symbol id="px-wicket" viewBox="0 0 12 13"><rect x="1" y="0" width="2" height="1" fill="var(--px-wood)"/><rect x="5" y="0" width="2" height="1" fill="var(--px-wood)"/><rect x="9" y="0" width="2" height="1" fill="var(--px-wood)"/><rect x="1" y="1" width="2" height="1" fill="var(--px-wood)"/><rect x="5" y="1" width="2" height="1" fill="var(--px-wood)"/><rect x="9" y="1" width="2" height="1" fill="var(--px-wood)"/><rect x="1" y="2" width="2" height="1" fill="var(--px-wood)"/><rect x="5" y="2" width="2" height="1" fill="var(--px-wood)"/><rect x="9" y="2" width="2" height="1" fill="var(--px-wood)"/><rect x="1" y="3" width="2" height="1" fill="var(--px-wood)"/><rect x="5" y="3" width="2" height="1" fill="var(--px-wood)"/><rect x="9" y="3" width="2" height="1" fill="var(--px-wood)"/><rect x="1" y="4" width="2" height="1" fill="var(--px-wood)"/><rect x="5" y="4" width="2" height="1" fill="var(--px-wood)"/><rect x="9" y="4" width="2" height="1" fill="var(--px-wood)"/><rect x="1" y="5" width="2" height="1" fill="var(--px-wood)"/><rect x="5" y="5" width="2" height="1" fill="var(--px-wood)"/><rect x="9" y="5" width="2" height="1" fill="var(--px-wood)"/><rect x="1" y="6" width="2" height="1" fill="var(--px-wood)"/><rect x="5" y="6" width="2" height="1" fill="var(--px-wood)"/><rect x="9" y="6" width="2" height="1" fill="var(--px-wood)"/><rect x="1" y="7" width="2" height="1" fill="var(--px-wood)"/><rect x="5" y="7" width="2" height="1" fill="var(--px-wood)"/><rect x="9" y="7" width="2" height="1" fill="var(--px-wood)"/><rect x="1" y="8" width="2" height="1" fill="var(--px-wood)"/><rect x="5" y="8" width="2" height="1" fill="var(--px-wood)"/><rect x="9" y="8" width="2" height="1" fill="var(--px-wood)"/><rect x="1" y="9" width="2" height="1" fill="var(--px-wood)"/><rect x="5" y="9" width="2" height="1" fill="var(--px-wood)"/><rect x="9" y="9" width="2" height="1" fill="var(--px-wood)"/><rect x="1" y="10" width="2" height="1" fill="var(--px-wood)"/><rect x="5" y="10" width="2" height="1" fill="var(--px-wood)"/><rect x="9" y="10" width="2" height="1" fill="var(--px-wood)"/><rect x="1" y="11" width="2" height="1" fill="var(--px-wood)"/><rect x="5" y="11" width="2" height="1" fill="var(--px-wood)"/><rect x="9" y="11" width="2" height="1" fill="var(--px-wood)"/><rect x="1" y="12" width="2" height="1" fill="var(--px-wood)"/><rect x="5" y="12" width="2" height="1" fill="var(--px-wood)"/><rect x="9" y="12" width="2" height="1" fill="var(--px-wood)"/></symbol><symbol id="px-bail" viewBox="0 0 5 2"><rect x="0" y="0" width="1" height="1" fill="var(--px-ink)"/><rect x="1" y="0" width="3" height="1" fill="var(--px-wood)"/><rect x="4" y="0" width="1" height="1" fill="var(--px-ink)"/><rect x="0" y="1" width="1" height="1" fill="var(--px-ink)"/><rect x="1" y="1" width="3" height="1" fill="var(--px-wood)"/><rect x="4" y="1" width="1" height="1" fill="var(--px-ink)"/></symbol><symbol id="px-bubble" viewBox="0 0 11 10"><rect x="2" y="0" width="7" height="1" fill="var(--px-ink)"/><rect x="1" y="1" width="9" height="1" fill="var(--px-ink)"/><rect x="0" y="2" width="1" height="1" fill="var(--px-ink)"/><rect x="1" y="2" width="9" height="1" fill="var(--px-kit)"/><rect x="10" y="2" width="1" height="1" fill="var(--px-ink)"/><rect x="0" y="3" width="1" height="1" fill="var(--px-ink)"/><rect x="1" y="3" width="1" height="1" fill="var(--px-kit)"/><rect x="2" y="3" width="7" height="1" fill="var(--px-cap)"/><rect x="9" y="3" width="1" height="1" fill="var(--px-kit)"/><rect x="10" y="3" width="1" height="1" fill="var(--px-ink)"/><rect x="0" y="4" width="1" height="1" fill="var(--px-ink)"/><rect x="1" y="4" width="9" height="1" fill="var(--px-kit)"/><rect x="10" y="4" width="1" height="1" fill="var(--px-ink)"/><rect x="0" y="5" width="1" height="1" fill="var(--px-ink)"/><rect x="1" y="5" width="1" height="1" fill="var(--px-kit)"/><rect x="2" y="5" width="6" height="1" fill="var(--px-cap)"/><rect x="8" y="5" width="2" height="1" fill="var(--px-kit)"/><rect x="10" y="5" width="1" height="1" fill="var(--px-ink)"/><rect x="0" y="6" width="1" height="1" fill="var(--px-ink)"/><rect x="1" y="6" width="9" height="1" fill="var(--px-kit)"/><rect x="10" y="6" width="1" height="1" fill="var(--px-ink)"/><rect x="0" y="7" width="1" height="1" fill="var(--px-ink)"/><rect x="1" y="7" width="1" height="1" fill="var(--px-kit)"/><rect x="2" y="7" width="4" height="1" fill="var(--px-cap)"/><rect x="6" y="7" width="4" height="1" fill="var(--px-kit)"/><rect x="10" y="7" width="1" height="1" fill="var(--px-ink)"/><rect x="1" y="8" width="9" height="1" fill="var(--px-ink)"/><rect x="3" y="9" width="2" height="1" fill="var(--px-ink)"/></symbol><symbol id="px-ball" viewBox="0 0 6 6"><rect x="1" y="0" width="1" height="1" fill="var(--px-ink)"/><rect x="2" y="0" width="2" height="1" fill="var(--px-ball)"/><rect x="4" y="0" width="1" height="1" fill="var(--px-ink)"/><rect x="0" y="1" width="1" height="1" fill="var(--px-ink)"/><rect x="1" y="1" width="4" height="1" fill="var(--px-ball)"/><rect x="5" y="1" width="1" height="1" fill="var(--px-ink)"/><rect x="0" y="2" width="2" height="1" fill="var(--px-ball)"/><rect x="2" y="2" width="1" height="1" fill="var(--px-seam)"/><rect x="3" y="2" width="3" height="1" fill="var(--px-ball)"/><rect x="0" y="3" width="3" height="1" fill="var(--px-ball)"/><rect x="3" y="3" width="1" height="1" fill="var(--px-seam)"/><rect x="4" y="3" width="2" height="1" fill="var(--px-ball)"/><rect x="0" y="4" width="1" height="1" fill="var(--px-ink)"/><rect x="1" y="4" width="4" height="1" fill="var(--px-ball)"/><rect x="5" y="4" width="1" height="1" fill="var(--px-ink)"/><rect x="1" y="5" width="1" height="1" fill="var(--px-ink)"/><rect x="2" y="5" width="2" height="1" fill="var(--px-ball)"/><rect x="4" y="5" width="1" height="1" fill="var(--px-ink)"/></symbol></svg>
+  <div id="progress" class="progress" aria-hidden="true"></div>
+
+  <header class="topbar">
+    <div class="wrap topbar-inner">
+      <a class="brand" href="/" aria-label="CricLens home">
+        <svg class="logo" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="14"/><path d="M9 7c4 5 4 13 0 18M23 7c-4 5-4 13 0 18"/></svg>
+        <span class="brand-name">CricLens</span>
+      </a>
+      <nav class="nav" aria-label="Primary">
+        <a href="/" class="on" aria-current="page">Home</a>
+        <a href="/analyze">Analyse</a>
+      </nav>
+      <div class="topbar-right">
+        <div id="status" class="status status-loading" role="status" hidden><span class="dot"></span><span id="status-text"></span></div>
+        <button id="theme-toggle" class="icon-btn" type="button" aria-label="Switch theme" title="Switch theme">
+          <svg class="ico-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.5"/><path d="M12 2v2.6M12 19.4V22M2 12h2.6M19.4 12H22M4.9 4.9l1.9 1.9M17.2 17.2l1.9 1.9M19.1 4.9l-1.9 1.9M6.8 17.2l-1.9 1.9"/></svg>
+          <svg class="ico-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8.2 8.2 0 0 1 9.5 4a8.3 8.3 0 1 0 10.5 10.5z"/></svg>
+        </button>
+      </div>
+    </div>
+  </header>
+
+
+  <main>
+    <!-- 1. what this is: the footage runs full bleed, the words sit on it -->
+    <section class="hero">
+      <div class="hero-frame">
+        <video id="hero-clip" class="hero-video" muted loop playsinline preload="auto" aria-hidden="true"></video>
+        <div class="hero-scrim" aria-hidden="true"></div>
+
+        <!-- the read-out, as a tracking monitor would show it -->
+        <div class="hero-hud" aria-hidden="true">
+          <div class="hud-row">
+            <span class="hud-tag"><i class="hud-rec"></i>Tracking</span>
+            <span class="hud-fps">30 FPS</span>
+          </div>
+          <div class="hud-chips">
+            <span class="chip"><b>Shot</b><span class="mono">Drive</span></span>
+            <span class="chip"><b>Stride</b><span class="mono">1.12 m</span></span>
+            <span class="chip"><b>Hand speed</b><span class="mono">14.5 m/s</span></span>
+          </div>
+        </div>
+
+        <div class="hero-copy">
+          <p class="eyebrow eyebrow-media">Pose-based batting analysis</p>
+          <h1 class="hero-title">Every delivery<br><em>tells you something.</em></h1>
+          <p class="hero-sub">Play one clip. CricLens picks out the striker, follows every joint through the
+            stroke, and turns the movement into a shot, a score and a coaching note.</p>
+          <div class="hero-actions">
+            <a class="btn btn-lg btn-on-media" href="/analyze">Analyse a clip
+              <span class="btn-arrow"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17 17 7M9 7h8v8"/></svg></span></a>
+            <a class="btn btn-lg btn-glass" href="#predict">See what it does
+              <span class="btn-arrow"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M6 13l6 6 6-6"/></svg></span></a>
+          </div>
+        </div>
+      </div>
+      <a class="scroll-cue" href="#predict" aria-label="Scroll down"><span></span></a>
+    </section>
+
+    <!-- 2. the shot -->
+    <section id="predict" class="stage reveal">
+      <div class="wrap">
+        <p class="eyebrow">First</p>
+        <h2 class="stage-title">Which shot was that?</h2>
+        <p class="stage-sub">The joint sequence goes to a classifier trained on eight strokes. You get the call
+          and how certain it is &mdash; never a bare guess.</p>
+        <ul class="shots">
+          <li><button type="button" class="shot" data-shot="drive"><b>Drive</b><span class="shot-cue" aria-hidden="true"></span></button></li>
+          <li><button type="button" class="shot" data-shot="cut"><b>Cut</b><span class="shot-cue" aria-hidden="true"></span></button></li>
+          <li><button type="button" class="shot" data-shot="pull_hook"><b>Pull / Hook</b><span class="shot-cue" aria-hidden="true"></span></button></li>
+          <li><button type="button" class="shot" data-shot="sweep"><b>Sweep</b><span class="shot-cue" aria-hidden="true"></span></button></li>
+          <li><button type="button" class="shot" data-shot="flick_glance"><b>Flick / Glance</b><span class="shot-cue" aria-hidden="true"></span></button></li>
+          <li><button type="button" class="shot" data-shot="defence"><b>Defence</b><span class="shot-cue" aria-hidden="true"></span></button></li>
+          <li><button type="button" class="shot" data-shot="lofted"><b>Lofted</b><span class="shot-cue" aria-hidden="true"></span></button></li>
+          <li><button type="button" class="shot" data-shot="scoop"><b>Scoop</b><span class="shot-cue" aria-hidden="true"></span></button></li>
+        </ul>
+        <p class="shots-hint small muted">Pick one to watch a held-out clip of that stroke.</p>
+      </div>
+    </section>
+
+    <!-- 3. the score -->
+    <section class="stage stage-alt reveal">
+      <div class="wrap stage-split">
+        <div>
+          <p class="eyebrow">Then</p>
+          <h2 class="stage-title">How good was it?</h2>
+          <p class="stage-sub">A scorer trained on coaches' ratings puts a number on the technique, and shows
+            where it sits against the strokes in the reference set. Stride and hand speed come straight off the
+            footage when the crease is clear enough to measure.</p>
+        </div>
+        <div class="dial-demo glass-panel">
+          <div class="dial-wrap" aria-hidden="true">
+            <svg viewBox="0 0 160 160" class="dial">
+              <circle class="dial-bg" cx="80" cy="80" r="64"/>
+              <circle id="dial-fg" class="dial-fg" cx="80" cy="80" r="64"/>
+              <path class="dial-seam" d="M34 34c18 22 18 70 0 92"/><path class="dial-seam" d="M126 34c-18 22-18 70 0 92"/>
+            </svg>
+            <div class="dial-num"><b id="dial-val">0.0</b><span>/ 10</span></div>
+          </div>
+
+          <!-- Have a go: time the shot and the dial follows. This is a toy, not the
+               scorer — the real number comes off a clip on the Analyse page. -->
+          <div class="net" id="net">
+            <p class="net-verdict" id="net-verdict">Have a go — time the drive.</p>
+            <div class="net-pitch" aria-hidden="true">
+              <svg class="px np-bowler" viewBox="0 0 14 16"><use href="#px-player"/></svg>
+              <svg class="px np-ball" id="np-ball" viewBox="0 0 6 6"><use href="#px-ball"/></svg>
+              <svg class="px np-stumps" id="np-stumps" viewBox="0 0 12 13"><use href="#px-wicket"/></svg>
+              <svg class="px np-bail" id="np-bail-a" viewBox="0 0 5 2"><use href="#px-bail"/></svg>
+              <svg class="px np-bail" id="np-bail-b" viewBox="0 0 5 2"><use href="#px-bail"/></svg>
+              <svg class="px np-bat" id="np-bat" viewBox="0 0 4 12"><use href="#px-bat"/></svg>
+              <svg class="px np-batter" viewBox="0 0 14 19"><use href="#px-batter"/></svg>
+            </div>
+            <div class="net-controls">
+              <button class="btn btn-sm net-go" id="net-go" type="button">
+                <span id="net-go-label">Bowl</span>
+                <span class="btn-arrow"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span>
+              </button>
+              <p class="net-hint small">then <kbd>Space</kbd> or click to play the shot</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 4. the coach -->
+    <section class="stage reveal">
+      <div class="wrap stage-split">
+        <div>
+          <p class="eyebrow">Finally</p>
+          <h2 class="stage-title">What do you work on?</h2>
+          <p class="stage-sub">The measurements are handed to a language model running on this machine, which
+            writes them up the way a coach would &mdash; what held up, what to work on, and a drill to go away with.</p>
+          <a class="btn btn-primary btn-lg" href="/analyze">Try it on a clip
+            <span class="btn-arrow"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17 17 7M9 7h8v8"/></svg></span></a>
+        </div>
+        <figure class="coach-demo">
+          <div class="coach-bubble glass-panel">
+            <p><b>Good drive.</b> Head stayed over the ball and the front foot got to the pitch of it.</p>
+            <p><b>Work on</b> the hands &mdash; the bat face turns early, which is why it squared up.</p>
+            <p class="drill">Drill · throwdowns on off stump, play late under your eyes.</p>
+          </div>
+        </figure>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap footer-inner">
+      <div>
+        <p class="eyebrow">About</p>
+        <p class="footer-about">CricLens analyses a single cricket delivery end to end &mdash; striker detection,
+          pose tracking, shot classification, technique scoring and coaching feedback. Everything runs on your
+          own machine; clips are never uploaded anywhere.</p>
+      </div>
+      <div class="footer-by">
+        <p class="eyebrow">Built by</p>
+        <p><b>Shikhar Srivastava</b></p>
+        <p><b>Vanshika Gupta</b></p>
+      </div>
+    </div>
+  </footer>
+
+
+
+  <!-- The pitch strip: a thin band along the foot of the window where the game is played
+       out as you scroll. Purely decorative, driven from home.js. -->
+  <div id="pitch" class="pitch" aria-hidden="true">
+    <div class="shadow" id="act-shadow-a"></div>
+    <div class="shadow" id="act-shadow-b"></div>
+
+    <div class="actor" id="act-batter">
+      <svg class="px s-bat" viewBox="0 0 4 12"><use href="#px-bat"/></svg>
+      <svg class="px s-body" viewBox="0 0 14 19"><use href="#px-batter"/></svg>
+    </div>
+
+    <div class="actor" id="act-player">
+      <svg class="px s-body" viewBox="0 0 14 16"><use href="#px-player"/></svg>
+      <svg class="px s-arm" viewBox="0 0 4 7"><use href="#px-arm"/></svg>
+    </div>
+
+    <div class="actor" id="act-wicket">
+      <svg class="px s-stumps" viewBox="0 0 12 13"><use href="#px-wicket"/></svg>
+      <svg class="px s-bail" id="act-bail-a" viewBox="0 0 5 2"><use href="#px-bail"/></svg>
+      <svg class="px s-bail" id="act-bail-b" viewBox="0 0 5 2"><use href="#px-bail"/></svg>
+    </div>
+
+    <svg class="px s-bubble" id="act-bubble" viewBox="0 0 11 10"><use href="#px-bubble"/></svg>
+
+    <svg class="px s-ball" id="act-ball" viewBox="0 0 6 6"><use href="#px-ball"/></svg>
+  </div>
+
+  <!-- Clip viewer for the stroke list. The clips are real held-out test-split samples
+       served by /api/samples, the same ones the Analyse page offers. -->
+  <dialog id="shot-dialog" class="shot-dialog" aria-labelledby="sd-title">
+    <div class="sd-head">
+      <div>
+        <p class="eyebrow" id="sd-kicker">Held-out clip</p>
+        <h3 class="sd-title" id="sd-title">Drive</h3>
+      </div>
+      <button type="button" class="icon-btn sd-close" id="sd-close" aria-label="Close">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+    <div class="sd-stage">
+      <video id="sd-video" muted loop playsinline preload="metadata"></video>
+      <p class="sd-note" id="sd-note" hidden></p>
+    </div>
+    <div class="sd-foot">
+      <p class="small muted" id="sd-meta"></p>
+      <button type="button" class="btn btn-sm" id="sd-next">Another clip</button>
+    </div>
+  </dialog>
+
+  <script src="/static/home.js"></script>
+</body>
+</html>
