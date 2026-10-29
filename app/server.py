@@ -270,7 +270,21 @@ def job_media(job_id: str, name: str):
     return FileResponse(p, media_type="video/mp4" if name.endswith(".mp4") else "image/jpeg")
 
 
-app.mount("/static", StaticFiles(directory=APP / "static"), name="static")
+class _NoCacheStatic(StaticFiles):
+    """Serve the UI with revalidation forced.
+
+    Without this the browser keeps its own copy of styles.css / home.js and an edit only
+    shows after a hard reload, which looks exactly like the page being broken. The ETag
+    still does the real work: unchanged files come back as a 304 and cost nothing.
+    """
+
+    def file_response(self, *args, **kwargs):
+        resp = super().file_response(*args, **kwargs)
+        resp.headers["Cache-Control"] = "no-cache"
+        return resp
+
+
+app.mount("/static", _NoCacheStatic(directory=APP / "static"), name="static")
 
 
 @app.get("/api/hero.mp4")
@@ -286,14 +300,17 @@ def hero_clip():
     return FileResponse(hits[0], media_type="video/mp4")
 
 
+_NO_CACHE = {"Cache-Control": "no-cache"}
+
+
 @app.get("/")
 def home():
-    return FileResponse(APP / "static/home.html")
+    return FileResponse(APP / "static/home.html", headers=_NO_CACHE)
 
 
 @app.get("/analyze")
 def analyze():
-    return FileResponse(APP / "static/analyze.html")
+    return FileResponse(APP / "static/analyze.html", headers=_NO_CACHE)
 
 
 def main():
