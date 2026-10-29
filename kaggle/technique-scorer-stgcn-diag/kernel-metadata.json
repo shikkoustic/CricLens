@@ -1,0 +1,15 @@
+{
+  "id": "vanshikagupta1813/criclens-scorer-stgcn-diag",
+  "title": "criclens-scorer-stgcn-diag",
+  "code_file": "stgcn_train.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": false,
+  "enable_internet": false,
+  "dataset_sources": [
+    "shikkoustic/criclens-all"
+  ],
+  "competition_sources": [],
+  "kernel_sources": []
+}
