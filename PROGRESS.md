@@ -818,5 +818,46 @@ exactly the kind of finding the supervisor's "try it and show the backing" ask w
 answers the GRU-architectural-change question: replacing the GRU with the approach that won elsewhere in
 this project does not win here.
 
+### Update 2026-10-29: ST-GCN encoder for the technique scorer -- also loses, 3-seed confirmed
+
+Second attempt at the GRU-architectural-change question, this time exploiting skeletal joint-connectivity
+the GRU discards entirely: a small ST-GCN (Yan et al., AAAI 2018, arXiv:1801.07455) -- 3 blocks, each a
+fixed-adjacency graph convolution (symmetric-normalised COCO-17 skeleton, 19 anatomical edges) followed by
+a per-joint temporal Conv1d -- in place of the Siamese GRU, same exemplar-pairing/diff-head/residual-target
+training loop otherwise unchanged (`models/train_technique_scorer_stgcn.py`). Two real engineering bugs
+hit and fixed along the way: (1) exhaustively pairing every query with every same-shot exemplar, reused
+verbatim from the GRU script, turned out ~8-10x more expensive per epoch for this encoder in practice
+(each block's graph einsum + Conv1d + BatchNorm runs twice per pair) -- measured at >1.5h for 6 epochs on
+Kaggle CPU; fixed with `RandomPairDataset` (one random same-shot exemplar per query per access, eval/test
+unchanged) for a ~7-8x local speedup, confirmed by smoke test (14.2s -> 1.9s/epoch, 200 clips); (2) Kaggle's
+free CPU tier was itself ~9x slower than this environment's local CPU for the same workload even after that
+fix (one full local epoch measured at 60.6s vs the Kaggle diagnostic's >55 min for 6 epochs) -- GPU was
+considered and rejected (shikkoustic had only 4.53h GPU quota left this week, and the model's tiny
+batch-size-64 workload was never expected to benefit much from it), so the authoritative run moved to local
+CPU instead, ~2.2h for all 3 seeds.
+
+3-seed result (seeds 0/1/2, identical config to the GRU's winning run -- residual targets, lr=3e-4,
+hidden=128, patience=15):
+
+| | mean Spearman | mean R-l2 | partial-rho vs overall |
+|---|---|---|---|
+| ST-GCN (seed 0) | 0.492 | 3.03 | 0.134 |
+| ST-GCN (seed 1) | 0.457 | 3.67 | 0.096 |
+| ST-GCN (seed 2) | 0.462 | 3.06 | 0.119 |
+| **ST-GCN (3-seed mean)** | **0.470 +/- 0.015** | **3.25 +/- 0.29** | **0.116 +/- 0.016** |
+| pose-GRU baseline (3-seed, PROGRESS.md 2026-10-17) | **0.588 +/- 0.006** | **2.55 +/- 0.03** | **0.122 +/- 0.013** |
+
+**Another clean loss, and this time the hoped-for metric doesn't move either.** Spearman is consistently
+~20% lower across all 3 seeds (not noise -- the gap is ~8x the GRU's own seed std), R-l2 is worse with
+roughly 10x the GRU's seed-to-seed variance (0.29 vs 0.03), and partial-rho -- the metric the graph-based
+joint-connectivity idea was specifically supposed to help, since it's a structural, per-part signal -- lands
+within noise of the GRU's own 0.122 +/- 0.013, not above it. Exploiting skeletal connectivity explicitly,
+rather than leaving the GRU to (possibly) discover it implicitly, did not translate into better per-part
+discrimination in this implementation. Not further tuned -- reported as a second honest negative result for
+the ablation section, alongside the Timesformer-scorer loss above: two architecturally different attempts
+to beat the GRU on this task (one trading pose structure for pixel appearance, one adding explicit graph
+structure on top of pose) have now both failed to improve on it, which is itself informative for the paper's
+discussion of why the residual-target *label* fix, not an encoder change, is the real lever for this task.
+
 ## Open decisions
 - Practice/nets/shadow-batting videos (no bowler or ball) are parked; focus is match clips for now.
