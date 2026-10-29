@@ -764,5 +764,59 @@ Kinetics pretraining (8 frames across several-second clips there). No ablation r
 nothing in the data suggests 8 is starving the model of signal, consistent with clean, un-plateaued
 training curves across all four gates above.
 
+### Update 2026-10-29: 3-seed confirmation -- contact_residual's edge holds, modestly
+
+Completed seed 3 for both `none` and `contact_residual` on the 6-class pool (seeds 1-2 reported above).
+Full picture:
+
+| seed | none | contact_residual | diff |
+|---|---|---|---|
+| 1 | 0.8096 | 0.8075 | -0.0021 |
+| 2 | 0.8058 | 0.8151 | +0.0093 |
+| 3 | 0.7986 | 0.8126 | +0.0140 |
+| **mean +/- std** | **0.8047 +/- 0.0056** | **0.8117 +/- 0.0039** | **+0.0070** |
+
+`contact_residual` wins 2 of 3 matched seeds and leads on the mean by 0.70 points, with tighter spread
+than `none`. This is NOT a clean, fully-separated win -- `none`'s best seed (0.8096) still edges out
+`contact_residual`'s worst (0.8075), and n=3 is a small sample -- but it's a real step up from the
+earlier pose-classifier gate comparison (adaptive 0.754+/-0.010 vs simple 0.755+/-0.003), which was a
+dead tie under the same test. Here the direction holds 2/3 of the time and the means stay separated by
+more than either std. Honest verdict: a modest, more-likely-real-than-not improvement -- reportable as
+"a small but consistent edge," not as a decisively proven win. Matches the literature-informed framing
+already settled on: this is an applied AdaptFormer-style adapter with a domain-specific conditioning
+signal, not a novel mechanism, and the paper should claim exactly that, backed by this table.
+
+### Update 2026-10-29: technique scorer -- Timesformer loses clearly to the pose-GRU
+
+Ran the Timesformer-encoder scorer (seed 0, 15 epochs, no early stop -- val select-score peaked at
+epoch 12 then declined slightly through epoch 15, so this is a real plateau, not a budget cutoff) on
+the full scored CricketVision pool (3,662 train / 655 val / 496 test):
+
+| | mean Spearman | mean R-l2 | partial-rho vs overall |
+|---|---|---|---|
+| Timesformer encoder (seed 0) | 0.378 | 3.44 | -0.009 |
+| pose-GRU baseline (3-seed, PROGRESS.md 2026-10-17) | **0.588 +/- 0.006** | **2.55 +/- 0.03** | **0.122 +/- 0.013** |
+
+**A clear, unambiguous loss** -- the gap (0.378 vs 0.588 mean Spearman) is roughly 35x the GRU baseline's
+own seed-to-seed std, so this isn't single-seed noise the way the shot-classifier comparisons were; no
+multi-seed re-check needed to trust the direction. Validation Spearman across epochs (0.298 -> 0.123 ->
+0.091 -> ... -> peak 0.489 at epoch 12 -> 0.466 at epoch 15) never got close to the GRU's test-set 0.588,
+and partial-rho stayed in the 0.03-0.07 range throughout training (GRU: 0.122) -- a structural gap, not
+a still-converging one.
+
+**Honest reading: the video-transformer advantage found for shot classification does NOT transfer to
+technique scoring.** Plausible reasons, worth stating rather than guessing at a fix: (1) the scored pool
+is ~3x smaller (3,662 vs 11,133 train clips) than the classification pool, and the compute-redesign
+needed to make Timesformer's cost tractable here (one random exemplar/query/epoch, exemplar embeddings
+cached without gradient -- see kaggle/technique-scorer-timesformer/timesformer_scorer.py's module
+docstring) likely makes the training signal noisier per epoch than the classifier ever had to deal with;
+(2) technique scoring may genuinely lean more on precise joint/limb geometry (what pose data encodes
+directly) than on the global pixel-level appearance a video transformer's CLS token captures -- unlike
+"which shot was this," "how good was the technique" plausibly needs the finer-grained structure pose
+data provides. Not further tuned -- this is reported as a clean negative result for the ablation section,
+exactly the kind of finding the supervisor's "try it and show the backing" ask was for, and it directly
+answers the GRU-architectural-change question: replacing the GRU with the approach that won elsewhere in
+this project does not win here.
+
 ## Open decisions
 - Practice/nets/shadow-batting videos (no bowler or ball) are parked; focus is match clips for now.
