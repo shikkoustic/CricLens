@@ -12,8 +12,9 @@ if (toggle) {
 }
 
 // ---------- hero clip ----------
-// Broadcast footage served from data/, so it may not exist on this machine: only reveal the
-// viewport's video once it can actually play, and drop it quietly if it cannot.
+// A montage of real strokes (scripts/build_hero_montage.py), served from data/ since the source
+// clips are broadcast-derived and never committed: only reveal the viewport once it can actually
+// play, and drop it quietly if the montage hasn't been built on this machine.
 const clip = document.getElementById("hero-clip");
 if (clip) {
   clip.addEventListener("canplay", () => { clip.classList.add("ready"); clip.play().catch(() => {}); }, { once: true });
