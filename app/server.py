@@ -3,7 +3,7 @@
     python -m app.server            # http://127.0.0.1:8000  (CRICLENS_HOST / CRICLENS_PORT to change)
 
 Models load once in the background at startup; jobs run one at a time on a single worker thread (the
-pose model and the LLM are CPU-heavy, so parallel jobs would only slow each other down).
+pose model is CPU-heavy, so parallel jobs would only slow each other down).
 """
 import os
 import queue
@@ -43,7 +43,7 @@ STAGES = [("read", "Reading video"), ("batter", "Finding the batter"), ("pose", 
 for d in (JOBS_DIR, THUMBS):
     d.mkdir(parents=True, exist_ok=True)
 
-state = {"ready": False, "stage": "Starting", "error": None, "llm": None}
+state = {"ready": False, "stage": "Starting", "error": None}
 models = {}
 jobs: dict[str, dict] = {}
 jobs_lock = threading.Lock()
@@ -56,7 +56,7 @@ def load_models():
         from app.pipeline import Analyzer
         models["analyzer"] = Analyzer(status=lambda m: state.update(stage=m))
         models["coach"] = Coach(status=lambda m: state.update(stage=m))
-        state.update(ready=True, stage="Ready", llm=models["coach"].name)
+        state.update(ready=True, stage="Ready")
     except Exception as e:
         traceback.print_exc()
         state.update(error=f"Model loading failed: {e}")
