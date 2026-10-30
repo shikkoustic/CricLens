@@ -32,7 +32,6 @@ JOBS_DIR, THUMBS = RUNTIME / "jobs", RUNTIME / "thumbs"
 SAMPLES_DIR = Path(os.environ.get("CRICLENS_SAMPLES_DIR", ROOT / "data/interim/clips"))
 SAMPLE_LIMIT = int(os.environ.get("CRICLENS_SAMPLE_LIMIT", "48"))
 KEEP_JOBS = int(os.environ.get("CRICLENS_KEEP_JOBS", "40"))
-HERO_CLIP = os.environ.get("CRICLENS_HERO_CLIP", "cs10_cover_cricketshot-train-cover-cover-0063")
 MAX_UPLOAD = 150 * 1024 * 1024
 VIDEO_EXT = {".mp4", ".mov", ".avi", ".mkv", ".webm", ".m4v"}
 MEDIA_NAME = re.compile(r"^[a-z_]+\.(mp4|jpg)$")
@@ -285,19 +284,6 @@ class _NoCacheStatic(StaticFiles):
 
 
 app.mount("/static", _NoCacheStatic(directory=APP / "static"), name="static")
-
-
-@app.get("/api/hero.mp4")
-def hero_clip():
-    """One clip played behind the home-page headline.
-
-    Served from data/ rather than copied into static/: the clips are broadcast-derived and must
-    never be committed. If the clips aren't on this machine the home page just shows its gradient.
-    """
-    hits = list(SAMPLES_DIR.glob(f"*/{HERO_CLIP}.mp4"))
-    if not hits:
-        raise HTTPException(404)
-    return FileResponse(hits[0], media_type="video/mp4")
 
 
 _NO_CACHE = {"Cache-Control": "no-cache"}

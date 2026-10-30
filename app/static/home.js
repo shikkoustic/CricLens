@@ -12,13 +12,14 @@ if (toggle) {
 }
 
 // ---------- hero clip ----------
-// Broadcast footage served from data/, so it may not exist on this machine: only reveal the
-// viewport's video once it can actually play, and drop it quietly if it cannot.
+// Licensed stock footage (see the credit comment in home.html), committed as a static asset --
+// unlike a dataset sample, it's fine to ship. Still only reveal the viewport once it can
+// actually play, and drop it quietly if it somehow cannot (e.g. blocked by the browser).
 const clip = document.getElementById("hero-clip");
 if (clip) {
   clip.addEventListener("canplay", () => { clip.classList.add("ready"); clip.play().catch(() => {}); }, { once: true });
   clip.addEventListener("error", () => clip.closest(".hero-frame")?.classList.add("no-clip"), { once: true });
-  clip.src = "/api/hero.mp4";
+  clip.src = "/static/hero.mp4";
 }
 
 // ---------- sections animate in once ----------
