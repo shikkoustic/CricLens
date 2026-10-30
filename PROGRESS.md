@@ -859,5 +859,46 @@ to beat the GRU on this task (one trading pose structure for pixel appearance, o
 structure on top of pose) have now both failed to improve on it, which is itself informative for the paper's
 discussion of why the residual-target *label* fix, not an encoder change, is the real lever for this task.
 
+### Update 2026-10-30: the app was serving the wrong technique scorer -- fixed, and the LLM coach removed
+
+An independent review of the project (treating the web app as the course deliverable it is) found
+`app/pipeline.py` still loaded `models/technique_scorer/vae_regressor.pt` -- the original September 24
+baseline (partial-rho 0.019) -- while every result above this line from 2026-10-17 onward describes a
+different, better model (contrastive regression + residual targets, partial-rho 0.137 3-seed mean) that
+the app never ran. Two things followed from that:
+
+1. **The actual "best" checkpoint did not exist anywhere retrievable.** Not on this laptop, not in a
+   tracked Kaggle job directory, not listable on Kaggle for this account. Only the numbers in this file
+   survived. Retrained locally to reproduce it (`--epochs 80 --seed 2 --residual-targets --lr 3e-4
+   --hidden 128 --patience 15 --device mps`, the exact config PROGRESS.md records as the standing-best
+   seed) -- fully reproducible locally since `data/processed/sequences.parquet` turned out to be
+   regenerable in 24s from locally-present kps chunks (all 16,460 `train_ready` clips' raw pose files
+   were present; `sequences.parquet` itself was simply never persisted after an earlier cleanup).
+   **Local result: mean Spearman 0.580, R-l2 2.60, partial-rho 0.125** -- close to but not identical to
+   the documented 0.595/2.51/0.137 (different hardware: this ran on Apple MPS, the original presumably
+   CUDA; GRU training is not bit-reproducible across backends even with a fixed seed). Same ballpark,
+   same conclusion. **Action still open: upload `models/technique_scorer_contrastive_residual_seed2/` to
+   the shared `criclens-all` Kaggle dataset**, the same way `models/batter_finder.joblib` already needs
+   to be, so this doesn't silently disappear again.
+2. **Wired the app to the real model, with a fallback it needs.** `app/pipeline.py` now loads the
+   contrastive scorer and, at inference, averages `exemplar_score + predicted_diff` over that shot's
+   10 exemplars (`kaggle/exemplars.csv`), exactly as `models/train_technique_scorer_contrastive.py`
+   does at eval time. `app/build_reference.py` now also precomputes `contrastive_diff_mu`/`_sd` (the
+   train-split diff normalisation the model needs to denormalise its output) into `app/reference.json`
+   -- score-only statistics, no sequence data, consistent with that file's existing scope. **Newly
+   discovered constraint**: exemplars only cover the five shots CricketVision scored in volume
+   (cut/defence/drive/flick_glance/pull_hook) -- lofted/scoop/sweep never had enough scored clips for an
+   exemplar set. The app falls back to the plain VAE for those three shots rather than leaving them
+   unscored; this is an honest, documented gap in the contrastive approach's coverage, not hidden by the
+   fallback. Verified end-to-end on real clips: a drive (exemplar path) and a scoop and a sweep
+   (fallback path) all produce sane 0-10 scores through the full `Analyzer.analyze()` pipeline.
+3. **The LLM coaching pass, present in the app despite the 2026-10-17 note above saying it was dropped
+   from the app, has now actually been removed** (`app/coach.py` is rule-based/template-only; no model
+   load, no `transformers` generation call). The findings logic that decides *what* to say is unchanged.
+
+Still open: re-run `scripts/app_smoke.py` against this updated pipeline for a fresh accuracy/latency
+baseline (the existing one, `docs/app/smoke_baseline_20260924.json`, predates this change, the LLM
+removal, and the 2026-10-17 batter-finder retrain).
+
 ## Open decisions
 - Practice/nets/shadow-batting videos (no bowler or ball) are parked; focus is match clips for now.
