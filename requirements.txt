@@ -19,7 +19,8 @@ tqdm==4.70.0
 pyyaml==6.0.3
 requests==2.34.2
 
-# Web app (app/): inference pipeline, coaching model and the FastAPI server.
+# Web app (app/): inference pipeline and the FastAPI server. Coaching feedback is rule-based
+# (app/coach.py) -- no LLM dependency.
 # Needed to run `python -m app.server`; the data prep scripts above do not use these.
 fastapi==0.141.1
 uvicorn==0.53.0

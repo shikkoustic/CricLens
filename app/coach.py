@@ -1,18 +1,14 @@
-"""Coaching feedback: rule-based findings grounded in the analysis numbers, phrased by a small local LLM.
+"""Coaching feedback: rule-based findings grounded in the analysis numbers, phrased as fixed templates.
 
-The rules decide WHAT to say (so every statement traces back to a measured number); the LLM only decides
-HOW to say it, and is told not to add numbers or observations. CLAUDE.md rules out paid APIs, so the LLM is
-a small open model run locally (CRICLENS_LLM, default Qwen2.5-1.5B-Instruct; "off" = template only). If it
-is unavailable or fails, the template text is used -- the findings are identical either way.
+Every statement traces back to a measured number -- there is no free-text generation here. An LLM
+phrasing pass was prototyped (Qwen2.5-1.5B-Instruct) but dropped per a supervisor conversation
+(PROGRESS.md, 2026-10-17): the paper's scope is classification + technique scoring, not coaching text,
+so the app no longer carries a language model.
 
 Body-part scores are handled carefully: docs/paper/finding_label_collinearity.md showed CricketVision's
 five part scores carry almost no signal beyond overall quality, so a part is only singled out when its
 percentile is clearly apart from the others, and even then framed as relative.
 """
-import os
-import threading
-
-MAX_GENERATE_S = float(os.environ.get("CRICLENS_LLM_MAX_SECONDS", "45"))
 FRONT_FOOT = {"drive", "defence", "flick_glance", "lofted", "sweep", "scoop"}
 ATTACKING = {"drive", "cut", "pull_hook", "lofted", "flick_glance", "sweep", "scoop"}
 PART_NAMES = {"head": "head position", "shoulder": "shoulder alignment", "hands": "hands and bat path",
@@ -27,26 +23,6 @@ SHOT_DRILL = {
     "sweep": "Sweep off a tee: long front stride, head over the ball, bat horizontal at contact.",
     "scoop": "Scoop drill with soft throwdowns: get low early, open the face, keep the head still.",
 }
-
-
-_EXAMPLE_IN = """Analysis findings:
-- Shot: Drive: Identified as a drive with 82% confidence.
-- Strong overall technique: Scored 7.4/10, better than 78% of rated drives in the coaching dataset.
-- Even across body parts: Head, shoulders, hands, hips and feet all rated about the same, so the overall score is the number to focus on.
-- Low bat speed: Peak hand speed of 9.1 m/s, slower than most drives.
-
-Recommended drills:
-- Top-hand drill: hit throwdowns with the top hand only to groove a full, fast swing."""
-_EXAMPLE_OUT = """That was a well-organised drive -- your 7.4/10 puts you ahead of most rated drives. The one thing holding it back is bat speed through the ball.
-
-**What went well**
-- Your overall technique is strong, and it's consistent from head to feet.
-
-**Work on**
-- Your hands came through at 9.1 m/s, slower than most drives. Commit to the shot and let the bat flow.
-
-**Try this**
-- Top-hand drill: hit throwdowns with the top hand only to groove a full, fast swing."""
 
 
 def _band(p):
@@ -145,59 +121,16 @@ def template_text(f: dict) -> str:
 
 
 class Coach:
+    """No model to load; kept as a class so app/server.py's lifecycle (status callback, startup
+    thread) doesn't need special-casing for a stage that happens to be instant."""
+
     def __init__(self, status=lambda msg: None):
-        self.model_id = os.environ.get("CRICLENS_LLM", "Qwen/Qwen2.5-1.5B-Instruct")
-        self.tok = self.llm = None
-        self.lock = threading.Lock()
-        if self.model_id.lower() == "off":
-            return
-        try:
-            status("Loading coaching language model")
-            import torch
-            from transformers import AutoModelForCausalLM, AutoTokenizer
-            # Default float32 weights are 4 bytes a parameter: ~6 GB for a 1.5B model, which swaps on an
-            # 8 GB laptop and turned one paragraph of feedback into a 10-minute wait. bfloat16 halves that,
-            # and Apple's GPU shares the same memory, so it costs nothing extra to use it.
-            self.device = "mps" if torch.backends.mps.is_available() else "cpu"
-            self.tok = AutoTokenizer.from_pretrained(self.model_id)
-            self.llm = AutoModelForCausalLM.from_pretrained(self.model_id, dtype=torch.bfloat16).eval().to(self.device)
-        except Exception as e:  # the app still works on template text
-            print(f"coach: LLM unavailable ({e}); using template feedback", flush=True)
-            self.tok = self.llm = None
+        pass
 
     @property
     def name(self):
-        return self.model_id.split("/")[-1] if self.llm is not None else None
+        return None
 
     def write(self, result: dict) -> dict:
         f = findings(result)
-        base = {"findings": f["findings"], "drills": f["drills"], "text": template_text(f), "source": "template"}
-        if self.llm is None:
-            return base
-        facts = "\n".join(f"- {x['title']}: {x['detail']}" for x in f["findings"])
-        drills = "\n".join(f"- {d}" for d in f["drills"])
-        messages = [
-            {"role": "system", "content": (
-                "You are a friendly, experienced cricket batting coach writing feedback on one shot from a video. "
-                "Use ONLY the analysis findings provided: no new numbers, body positions or events. Talk to the batter "
-                "as 'you'. If the findings say the shot type is uncertain, say so in the summary. Mention each drill "
-                "once, under Try this. Under 130 words, in exactly the format of the example.")},
-            {"role": "user", "content": _EXAMPLE_IN},
-            {"role": "assistant", "content": _EXAMPLE_OUT},
-            {"role": "user", "content": f"Analysis findings:\n{facts}\n\nRecommended drills:\n{drills}"},
-        ]
-        try:
-            import torch
-            with self.lock, torch.no_grad():
-                enc = self.tok.apply_chat_template(messages, add_generation_prompt=True, return_tensors="pt",
-                                                   return_dict=True).to(self.device)
-                # max_time caps the stage instead of letting a slow machine hang the whole job queue:
-                # whatever has been generated is returned, and short output falls through to the template.
-                out = self.llm.generate(**enc, max_new_tokens=220, do_sample=False, repetition_penalty=1.05,
-                                        max_time=MAX_GENERATE_S)
-                text = self.tok.decode(out[0, enc["input_ids"].shape[1]:], skip_special_tokens=True).strip()
-            if len(text) > 40:
-                return {**base, "text": text, "source": self.name}
-        except Exception as e:
-            print(f"coach: generation failed ({e}); using template feedback", flush=True)
-        return base
+        return {"findings": f["findings"], "drills": f["drills"], "text": template_text(f), "source": "template"}

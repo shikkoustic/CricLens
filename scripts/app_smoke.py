@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Run the sample clips through a running app server and report what broke.
 
-    python -m app.server &                  # or CRICLENS_LLM=off for a faster run
+    python -m app.server &
     python scripts/app_smoke.py             # all samples
     python scripts/app_smoke.py -n 12       # first 12
 
@@ -92,7 +92,7 @@ def main():
     samples = api(a.base, "/api/samples")
     if a.n:
         samples = samples[:a.n]
-    print(f"{len(samples)} samples, llm={health['llm']}\n", flush=True)
+    print(f"{len(samples)} samples\n", flush=True)
 
     rows = []
     for i, s in enumerate(samples, 1):
