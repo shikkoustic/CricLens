@@ -5,7 +5,9 @@ Mirrors the training-time data path exactly so the models see what they were tra
 here because that file is a Kaggle script with side effects at import), ViTPose-Base with zero-padded
 crops, the contact-anchored window (0.8 s before, 0.6 s after, never crossing a camera cut), T=32
 resampling (models/resample_sequences.py), hip-centred normalisation (models/train_shot_classifier.py),
-then the LSTM shot classifier, the tuned VAE technique scorer and pitch calibration.
+then the LSTM shot classifier, the contrastive technique scorer (models/
+train_technique_scorer_contrastive.py -- residual targets + same-shot exemplar averaging, falling
+back to the plain VAE for the three shots with no exemplar set) and pitch calibration.
 """
 import json
 import os
@@ -26,6 +28,7 @@ from models.pitch_calibration import calibrate_clip, measure_stride_and_swing  #
 from models.resample_sequences import resample_clip  # noqa: E402
 from models.train_shot_classifier import make_model, normalise  # noqa: E402
 from models.train_technique_scorer import VAERegressor  # noqa: E402
+from models.train_technique_scorer_contrastive import ContrastiveScorer, from_residual, to_residual  # noqa: E402
 
 PRE, FOLLOW, PAD, GAP = 0.8, 0.6, 0.12, 3
 # The striker pick is only as trustworthy as the finder's confidence. models/pose_index.py used
@@ -84,10 +87,55 @@ class Analyzer:
         self.classifier = make_model("lstm", 51, len(SHOTS), 32)
         self.classifier.load_state_dict(torch.load(ROOT / "models/shot_classifier/lstm.pt", map_location="cpu"))
         self.classifier.eval()
-        self.scorer = VAERegressor(51, 32, 6)
-        self.scorer.load_state_dict(torch.load(ROOT / "models/technique_scorer/vae_regressor.pt", map_location="cpu"))
+        # Technique scorer: contrastive regression against same-shot exemplars with residual
+        # targets (PROGRESS.md 2026-10-17) -- partial-rho vs overall 0.137 (3-seed mean), against
+        # the plain VAE's 0.019: a real, if modest, improvement in genuine per-part discrimination,
+        # at roughly the same raw Spearman. Exemplars (kaggle/exemplars.csv) only cover the five
+        # shots CricketVision scored in volume (cut/defence/drive/flick_glance/pull_hook); the VAE
+        # stays loaded as a fallback for the other three (lofted/scoop/sweep), which never had
+        # enough scored clips to build an exemplar set from.
+        self.scorer = ContrastiveScorer(51, 6, hidden=128)
+        self.scorer.load_state_dict(torch.load(
+            ROOT / "models/technique_scorer_contrastive_residual_seed2/contrastive_scorer.pt", map_location="cpu"))
         self.scorer.eval()
+        self.scorer_fallback = VAERegressor(51, 32, 6)
+        self.scorer_fallback.load_state_dict(torch.load(ROOT / "models/technique_scorer/vae_regressor.pt", map_location="cpu"))
+        self.scorer_fallback.eval()
         self.ref = json.load(open(ROOT / "app/reference.json"))
+        self.exemplars = self._load_exemplars()
+
+    # ---- technique scorer ---------------------------------------------------------------------------
+    def _load_exemplars(self) -> dict[str, tuple]:
+        """Cache each exemplar's embedding once at startup, grouped by shot -- the contrastive
+        scorer only ever compares a query against same-shot exemplars. Scores only, in residual
+        space (to_residual): no clip-level data beyond what kaggle/exemplars.csv already commits."""
+        ex = pd.read_csv(ROOT / "kaggle/exemplars.csv")
+        seq_idx = pd.read_parquet(ROOT / "data/processed/sequences.parquet").set_index("clip_id")
+        score_cols = [f"score_{t}" for t in self.ref["targets"]]
+        out = {}
+        with torch.no_grad():
+            for shot, g in ex.groupby("shot"):
+                seqs = torch.stack([torch.from_numpy(normalise(np.load(ROOT / seq_idx.loc[r.clip_id, "seq_path"])["seq"]))
+                                     for r in g.itertuples()])
+                embeds = self.scorer.embed(seqs)
+                scores = to_residual(g[score_cols].to_numpy(np.float32))
+                out[shot] = (embeds, torch.from_numpy(scores))
+        return out
+
+    def score_technique(self, x, shot) -> np.ndarray:
+        """6 scores (5 parts + overall) in real units. Contrastive-against-exemplars for the five
+        shots that have exemplars; the VAE baseline for the three that don't (see __init__)."""
+        if shot not in self.exemplars:
+            with torch.no_grad():
+                pred = self.scorer_fallback(x)[3][0].numpy()
+            return pred * np.array(self.ref["scorer_sd"]) + np.array(self.ref["scorer_mu"])
+        ze, ey = self.exemplars[shot]
+        diff_mu, diff_sd = np.array(self.ref["contrastive_diff_mu"]), np.array(self.ref["contrastive_diff_sd"])
+        with torch.no_grad():
+            zq = self.scorer.embed(x).expand(len(ze), -1)
+            diff = self.scorer.head(torch.cat([zq, ze, zq - ze], dim=-1)).numpy()
+        pred_residual = ey.numpy() + diff * diff_sd + diff_mu  # still in residual (to_residual) space
+        return from_residual(pred_residual.mean(axis=0))
 
     # ---- video ------------------------------------------------------------------------------------
     @staticmethod
@@ -310,9 +358,7 @@ class Analyzer:
         shot = SHOTS[int(order[0])]
 
         progress("technique", 0.74)
-        mu, sd = np.array(self.ref["scorer_mu"]), np.array(self.ref["scorer_sd"])
-        with torch.no_grad():
-            pred = self.scorer(x)[3][0].numpy() * sd + mu
+        pred = self.score_technique(x, shot)
         scores = {t: float(np.clip(v, 0, 10)) for t, v in zip(self.ref["targets"], pred)}
         levels = self.ref["quantile_levels"]
         score_ref = shot if shot in self.ref["score"] else "all"
