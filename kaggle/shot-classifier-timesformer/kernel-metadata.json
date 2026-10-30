@@ -12,5 +12,7 @@
     "shikkoustic/criclens-all"
   ],
   "competition_sources": [],
-  "kernel_sources": []
+  "kernel_sources": [
+    "shikkoustic/criclens-shot-classifier-timesformer"
+  ]
 }

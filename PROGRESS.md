@@ -521,5 +521,343 @@ on anatomically correct joints per body part, and whether temporal attention fin
 unsupervised -- remains a more promising direction *if* pursued, since it doesn't depend on this
 architecture also having to win on raw accuracy; not started yet.
 
+### Update 2026-10-26: real video + pretrained Timesformer -- promising, scaling to the full pool
+
+The pose-domain ST-TR+gate result above came back negative, but the supervisor's actual ask was to try
+Timesformer on **real video**, not a pose-domain adaptation of the same idea -- pose data throws away the
+pixel information a pretrained video transformer is built to use. Built `kaggle/shot-classifier-timesformer/`:
+raw frames (8 per clip, sampled across the pose pipeline's ball-release-to-follow-through window, cropped
+to the tracked batter box with 12% padding) through Facebook's Kinetics-400-pretrained Timesformer
+(`facebook/timesformer-base-finetuned-k400`), with each block's feed-forward sublayer optionally replaced
+by a gated version (`none` = original pretrained GELU feed-forward, control; `adaptive` = SwiGLU-style
+learned gate, warm-started -- see below).
+
+**Three bugs hit and fixed, each verified before trusting it, not just assumed fixed:**
+1. *Occlusion edge case*: some frames have no valid tracked batter box (low confidence/occlusion) --
+   fixed by falling back to the nearest frame (by index) that does have one; caught via a smoke test
+   against real downloaded clips, not found in CI.
+2. *Unverified warm-start*: naively swapping in a fresh gated feed-forward discards that layer's pretrained
+   weights, so it has to relearn 12 layers of feed-forward transform from scratch -- on a small subset the
+   loss barely moved while the pretrained control dropped sharply. Fix: initialize the adaptive gate's two
+   branches both from the pretrained dense layer, which reduces the formula to `SiLU(dense(x))`, a close
+   stand-in for the original `GELU(dense(x))` -- checked directly against the real pretrained layer's
+   output on random input (8% mean relative error, 0.998 correlation) before trusting it. The same trick
+   does **not** work for the plain-product ("simple"/NAFNet) gate -- checked and found worse than the
+   output scale itself (heavy-tailed outliers from squaring) -- left unfixed, `simple` excluded from runs
+   until solved properly.
+3. *CUDA OOM, then a stuck gradient*: batch_size=16 OOM'd a T4 partway through epoch 1 (a ViT-Base video
+   transformer over 8 frames at 224x224 holds far more activation memory than anything else in this
+   project). Fixed with mixed precision (fp16 autocast + GradScaler) + batch_size=8. This then made the
+   warm-started adaptive gate's training completely stall (loss flat at ln(5), val macro-F1 bit-identical
+   for 3 epochs straight) -- diagnosed by checking gradients in plain fp32 on CPU (no NaN/Inf, healthy
+   magnitudes, ruling out the warm-start weights) and concluding GradScaler was skipping nearly every
+   optimizer step on gradient overflow. Fixed with gradient clipping before the scaler step -- confirmed
+   fixed (amp_scale stayed pinned at 32768 instead of collapsing; the model now genuinely learns).
+
+**Results so far, scaling up on the CricketVision-only subset (5 shot classes) before expanding scope:**
+
+| clips | gate | test macro-F1 |
+|---|---|---|
+| 300 | none | 0.533 |
+| 1,500 | none | **0.678** |
+| 1,500 | adaptive (gradient-clip fix) | 0.231 (learning, but well behind `none` within an 8-epoch budget) |
+
+`none`'s result climbs clearly with scale (0.533 -> 0.678) and already matches the better pose-only
+baselines (LSTM 0.785, GRU 0.777) despite only 1,500 of the ~4,863 CricketVision clips and a much harder
+task (raw pixels, not pre-extracted joints) -- real signal that this approach is worth scaling further,
+not a result to settle for. `adaptive` learns correctly post-fix but is far behind `none` in the same
+epoch budget; not yet tuned (a separate/lower learning rate for the gate's fresh parameters is the next
+thing to try, not attempted yet).
+
+**Next step, in progress:** scale to the full pool across all 6 sources (cricshot10k 6,316 + cricketvision
+4,863 + ipl2023 1,481 + kucricshot 1,192 + cricshot10 1,119 + amittalmale 409 = **15,380 clips, 8 shot
+classes**), re-running `none` as the real baseline on this harder task (the 1,500-clip number doesn't
+carry over) alongside `adaptive`. Given this is a multi-hour run and the project has already hit three
+separate failure modes in this exact script, added epoch-level checkpoint/resume support (full
+model+optimizer+scaler state saved every epoch, self-referential `kernel_sources` in
+`kernel-metadata.json` so a prior push's output is visible as input on the next push) -- verified locally
+end-to-end on a 4-clip real-data fixture (ran 1 epoch, confirmed the checkpoint, re-ran with a higher
+epoch budget, confirmed it resumed from epoch 1 rather than restarting, and that the final eval correctly
+reloaded the best-epoch weights) before spending Kaggle GPU time on the real run.
+
+**That run died anyway -- a fourth failure mode, bigger than the checkpointing was built for.** Killed by
+Kaggle's OOM killer (plain `Killed`, no traceback) 43 minutes in, before a single epoch finished, so the
+new checkpoint/resume support never even got a chance to matter. Root cause: `cache_clips()` decoded
+*every* clip's full pixel array (8x224x224x3 float32, ~4.6 MB/clip) into one Python dict held entirely in
+RAM before training started -- fine at 300-1,500 clips (1-7 GB) but ~70 GB at the full 15,380-clip pool,
+far past what a Kaggle GPU session's RAM allows. This design had only ever been exercised at the smaller
+scales; nothing about it was wrong until the pool size changed by 10x.
+
+Fixed by not holding decoded pixels at all: `VideoDataset` now decodes+crops each clip's frames on
+access (lazily, per batch) instead of from a pre-built RAM cache, with `DataLoader(num_workers=4)` so
+that CPU decode overlaps GPU compute instead of serializing in front of it. A cheap `precheck_clips()`
+(reads only the small kps.npz window/box arrays, not video) replaces the old full-decode prefilter for
+dropping clips with un-trackable windows; a clip that still fails to decode at runtime (rare: genuine
+video I/O corruption, not a window/box issue) falls back to an all-zero tensor rather than crashing a
+whole epoch over one bad file. Verified the same way as the checkpoint logic -- re-ran the 4-clip local
+fixture end-to-end (including the resume check) against the lazy-decode path before relaunching on
+Kaggle.
+
+### Update 2026-10-27: supervisor approved the body-part-independence novelty; new architecture angle -- 'contact' gate
+
+Supervisor approved the overall-score/individual-body-part-score independence finding (partial-rho 0.137,
+PROGRESS.md 2026-10-24 and earlier) as one novelty for the paper, and asked to keep building on the
+Timesformer/NAFNet direction. Since 'adaptive' is just Shazeer's published SwiGLU and 'simple' is
+NAFNet's own published gate, neither is *our* architectural contribution -- added a third gate, **'contact'**,
+as that piece: the 'adaptive' gate's sigmoid pre-activation is additionally biased by a learned readout of
+each sampled frame's signed, window-normalised distance to the ball-bat contact frame (already extracted
+by the pose pipeline as `window`, free to reuse). The idea: let the feed-forward gate open and close as a
+function of proximity to the contact moment -- something neither NAFNet's fixed gate nor a plain learned
+gate can do, since neither sees per-frame timing. This is specific to this project's data/task, not a
+repackaging of existing work.
+
+Implementation required knowing Timesformer's exact token layout (verified against the installed
+transformers' `TimesformerEmbeddings.forward`, divided-space-time path): tokens are `[CLS, then
+patch-major/frame-minor]` -- patch 0's 8 frames, then patch 1's 8 frames, etc. `GateWrapper` (new class)
+tiles the per-sample, per-frame contact signal into that exact order and sets it as an attribute on every
+gated layer before each forward pass, since `TimesformerEncoder`'s layer loop doesn't expose a way to pass
+extra arguments through. `contact_proj` (the new linear readout) is zero-initialized (weight AND bias),
+so at init the gate reduces exactly to 'adaptive' -- training decides whether the signal ends up mattering,
+rather than starting from an unverified random init.
+
+**Verified before spending any GPU time on it** (same rigor as the earlier warm-start fix): (1) a fresh
+'contact' model's logits are bit-identical to a fresh 'adaptive' model's on the same random input despite
+a nonzero contact signal (max abs diff 0.0) -- confirms the zero-init actually neutralises the new term;
+(2) the token-tiling code's output, checked in isolation against the derived patch-major/frame-minor
+order, places each frame's signal at exactly the expected positions; (3) hooked into a real pretrained
+model's gated layers and confirmed the contact-signal tensor's length matches the real hidden-states
+sequence length (1569 = 1 CLS + 196 patches x 8 frames) at every one of the 12 layers, not just in theory.
+Also re-ran the checkpoint/resume smoke test against this new wrapped model structure (state_dict keys
+now nest under `model.` because of `GateWrapper`) to confirm resume still works.
+
+**Not yet run on Kaggle** -- holding off pushing until the full-pool `none`/`adaptive` run (started this
+session, see the entry above) finishes, since pushing a new kernel version while one is `RUNNING` would
+very likely restart/cancel it. Default `CRICLENS_GATES` is now `contact` alone (not `none,adaptive,contact`)
+so the next push doesn't re-spend GPU time on already-confirmed numbers.
+
+Ran it as a second, separate Kaggle kernel (`kaggle/shot-classifier-timesformer-contact/`) in parallel
+with the still-running `none`/`adaptive` job instead of waiting, since Kaggle allows 2 concurrent GPU
+sessions per account.
+
+**Result, full 15,380-clip, 8-class pool, 8 epochs (no early stop -- val macro-F1 was still climbing):**
+
+| epoch | val macro-F1 |
+|---|---|
+| 1 | 0.169 |
+| 3 | 0.292 |
+| 5 | 0.428 |
+| 7 | **0.557** (best) |
+| 8 | 0.504 |
+
+Test: acc=0.576, **macro_f1=0.540**, weighted_f1=0.567. ~38 min/epoch, ~5h15m total. The steady climb
+through epoch 7 (no plateau, patience=3 never triggered) suggests more epochs would likely help further
+-- not run yet, pending a decision on whether to spend more GPU time extending this before comparing
+against `none`/`adaptive`'s numbers on the same pool (that run is still in progress as of this writing).
+
+### Update 2026-10-28: full comparison in -- both gates lose to the plain pretrained model, clearly
+
+`none` and `adaptive` finished overnight (as two separate kernels on a teammate's Kaggle account, after
+the original single-kernel sequential run got stuck at 13h+ and was killed -- see above). `contact` was
+separately extended from 8 to 13 epochs via checkpoint-resume (not restart) on shikkoustic's account,
+and hit early-stop (patience=3) at epoch 12, so it's a converged number, not a budget cutoff like the
+other two still might be.
+
+**Full 15,380-clip, 8-class pool, test set (2,109 clips):**
+
+| gate | test macro-F1 | test acc | val macro-F1 trajectory |
+|---|---|---|---|
+| **none** (plain pretrained FFN) | **0.797** | 0.800 | 0.710 -> 0.758 -> 0.767 -> 0.784 -> 0.752 -> 0.700 -> **0.788** -> 0.782 (8 ep, noisy but clearly converged near 0.78-0.79) |
+| adaptive (SwiGLU, published) | 0.594 | 0.612 | 0.149 -> 0.288 -> 0.367 -> 0.456 -> 0.482 -> 0.514 -> 0.535 -> 0.597 (8 ep, still climbing, not stopped) |
+| contact (ours, 13 ep, early-stopped) | 0.583 | 0.627 | ...0.557 (ep7) -> 0.504 (ep8) -> **0.596** (ep9, new best) -> 0.569 -> 0.565 -> 0.596 (ep12, early stop) |
+
+**`none` is the clear winner, by a wide margin** -- and it beats every pose-only baseline in the project
+too (LSTM 0.785, GRU 0.777, Transformer 0.766, pose-ST-TR+gate ~0.754-0.755), despite this being the
+harder 8-class task (those baselines were measured on an easier split in some cases). That's a genuine,
+strong, honest result on its own: **real video through a Kinetics-pretrained Timesformer, with no
+architectural tricks at all, outperforms every pose-based sequence model tried in this project.**
+
+**Both gates lose to `none` by ~0.20 macro-F1, and `contact` does not clearly beat `adaptive`** --
+0.583 vs 0.594 is within plausible single-seed noise, not a demonstrated win for the contact-conditioning
+idea. The honest read: swapping out `.intermediate`+`.output` for either gate discards 12 layers of
+Kinetics-pretrained feed-forward weights (documented caveat since this pipeline was first built), and
+that loss is costly enough that neither gate's added expressiveness earns it back within a realistic
+epoch budget -- confirmed now at full scale with a real baseline, not assumed. `contact`'s own
+conditioning signal doesn't rescue this on top of `adaptive`'s already-warm-started gate.
+
+**What this means for the architectural-novelty angle discussed with the supervisor:** gate-*replacement*
+(this design) is not the way to beat the plain pretrained model -- that's now a clean, ablation-backed
+negative result, exactly the kind of "tried it, here's why it didn't work" evidence the supervisor asked
+for. A more promising variant, not yet tried: add the contact-conditioned gate as a small residual/additive
+term *alongside* the pretrained feed-forward (frozen or fine-tuned) instead of replacing it outright --
+keeps the Kinetics pretraining intact while still letting the model's representation respond to contact
+timing. Also worth stating plainly: `none` winning this convincingly is itself a legitimate, publishable
+contribution (video + pretrained Timesformer beats pose-based GRU/LSTM/Transformer), independent of
+whether any gate variant ever wins.
+
+### Update 2026-10-28: 'contact_residual' beats the plain pretrained model -- promising, needs multi-seed confirmation
+
+Built and ran the residual/additive variant proposed above: `contact_residual` keeps the pretrained
+feed-forward completely untouched and adds a small (~10.6M param, ~8.8% of the base model) branch
+alongside it via a forward hook on `TimesformerOutput`, conditioned on each frame's distance to the
+ball-bat contact moment. Verified bit-identical to `none` at init (zero-initialized correction, not an
+approximation) before spending any GPU time. Ran on the same 8-class pool as `none`/`adaptive`/`contact`
+(before the scoop/sweep exclusion below), so directly comparable:
+
+| gate | test macro-F1 | val macro-F1 trajectory |
+|---|---|---|
+| **contact_residual** | **0.811** | 0.725 -> 0.771 -> 0.759 -> 0.772 -> 0.774 -> **0.799** (ep6, best) -> 0.789 -> 0.793 |
+| none (plain pretrained FFN) | 0.797 | 0.710 -> 0.758 -> 0.767 -> 0.784 -> 0.752 -> 0.700 -> 0.788 -> 0.782 |
+| adaptive (SwiGLU, published) | 0.594 | (slow climb, still improving at ep8) |
+| contact (gate-replacement, ours) | 0.583 | (converged via early-stop at ep12 of 13) |
+
+`contact_residual` beats `none` by ~1.4 points, and the training curve itself supports the design story:
+fast, clean convergence (train loss 0.962 -> 0.158, smoothly) matching `none`'s behaviour, not the slow
+climb from near-random that `adaptive`/`contact` showed -- consistent with "the pretrained weights are
+genuinely intact, this isn't relearning the feed-forward from scratch."
+
+**Caveat, stated plainly before calling this a win:** this is a single seed, and this project has been
+burned by single-seed gaps of similar size before -- the original "adaptive beats simple" pose-classifier
+finding (PROGRESS.md 2026-10-26) looked just as convincing at single-seed (0.768 vs 0.759) and evaporated
+under 3-seed testing (0.754 vs 0.755, a tie). A ~1.4-point gap here is in the same range that earlier
+"result" turned out to be noise at. **Not confirmed as a real win until multi-seed tested** -- next step,
+not yet run.
+
+### Update 2026-10-28: dropped 'scoop'/'sweep' -- 6 balanced classes going forward
+
+`scoop` has only 96 clips total (70 train) and `sweep` only 838, both far below the other 6 classes
+(1,898-3,402 each). macro-F1 weights every class equally regardless of size, so a class the model can
+barely learn from a handful of examples drags the metric down out of proportion to how often it matters.
+Narrowed the pool to the 6 better-represented, more evenly-sized classes (14,446 clips, <2x spread:
+1,898-3,402) for a more honestly comparable task going forward -- applied to all gate scripts, but **not
+yet re-run**: the `none`/`adaptive`/`contact`/`contact_residual` numbers above are all still on the old
+8-class pool. A fresh `none` baseline on the 6-class pool is needed before any 6-class result can be
+judged against anything.
+
+### Update 2026-10-28: input-quality scan -- data is clean, one real but modest pattern found
+
+In response to a direct question about whether the pipeline's input (8 sampled frames per clip, cropped
+to the tracked batter box) is actually clean, ran an automated scan over a stratified sample of 1,500
+real clips (250 per class across the 6 kept shot types, all 6 sources) using the actual production
+`read_clip_pixels`/`padded_crop` code, not a reimplementation -- plus visual inspection of several
+real rendered frame sequences (not just the scan's numbers).
+
+**Result: the data holds up.** 0 decode failures across the sample. Visually, sampled sequences (defence,
+cut, drive, pull_hook across 4 different sources) show the batter clearly tracked through the actual shot
+motion -- not noise. Box sizes, brightness all in sane ranges.
+
+**One real, now-quantified pattern:** black padding (box exceeding the frame) climbs steadily from the
+start to the end of a clip's sampled window -- confirmed on the full 1,500-clip scan at 0.036% (first of
+the 8 frames) to 3.0% (last). Visual inspection confirmed why: broadcast footage sometimes cuts to a
+replay/graphic right after the shot, and the box tracker doesn't follow the cut, corrupting that one
+sampled frame (e.g. `cs10k_straight-drive-vid531-63`'s last frame is a sponsor graphic, not the batter).
+But it's modest in aggregate -- 0/1,500 clips have any frame more than 50% black padding -- so it's noise
+at the margins, not a pipeline-breaking bug. `cricshot10k` is consistently the noisiest of the 6 sources
+(largest, least precise boxes, mean_zero_frac ~8x the next-worst source). At the full 1,500-clip scale,
+`lofted` also stood out as a soft spot independent of source (mean_zero_frac ~2-3x the other 5 classes,
+largest average box area) -- plausibly because a lofted shot's full swing arc (bat raised high through
+follow-through) is harder for the box tracker to keep bounded than a more compact shot.
+
+**Also checked whether 8 sampled frames is enough temporal coverage**, using real window-length data: the
+median window (ball release to follow-through) is 27 source frames at 25-30fps (~0.96s), so 8 samples
+land roughly every 4 source frames (~130-160ms) -- denser per-second coverage than Timesformer's own
+Kinetics pretraining (8 frames across several-second clips there). No ablation run on frame count, but
+nothing in the data suggests 8 is starving the model of signal, consistent with clean, un-plateaued
+training curves across all four gates above.
+
+### Update 2026-10-29: 3-seed confirmation -- contact_residual's edge holds, modestly
+
+Completed seed 3 for both `none` and `contact_residual` on the 6-class pool (seeds 1-2 reported above).
+Full picture:
+
+| seed | none | contact_residual | diff |
+|---|---|---|---|
+| 1 | 0.8096 | 0.8075 | -0.0021 |
+| 2 | 0.8058 | 0.8151 | +0.0093 |
+| 3 | 0.7986 | 0.8126 | +0.0140 |
+| **mean +/- std** | **0.8047 +/- 0.0056** | **0.8117 +/- 0.0039** | **+0.0070** |
+
+`contact_residual` wins 2 of 3 matched seeds and leads on the mean by 0.70 points, with tighter spread
+than `none`. This is NOT a clean, fully-separated win -- `none`'s best seed (0.8096) still edges out
+`contact_residual`'s worst (0.8075), and n=3 is a small sample -- but it's a real step up from the
+earlier pose-classifier gate comparison (adaptive 0.754+/-0.010 vs simple 0.755+/-0.003), which was a
+dead tie under the same test. Here the direction holds 2/3 of the time and the means stay separated by
+more than either std. Honest verdict: a modest, more-likely-real-than-not improvement -- reportable as
+"a small but consistent edge," not as a decisively proven win. Matches the literature-informed framing
+already settled on: this is an applied AdaptFormer-style adapter with a domain-specific conditioning
+signal, not a novel mechanism, and the paper should claim exactly that, backed by this table.
+
+### Update 2026-10-29: technique scorer -- Timesformer loses clearly to the pose-GRU
+
+Ran the Timesformer-encoder scorer (seed 0, 15 epochs, no early stop -- val select-score peaked at
+epoch 12 then declined slightly through epoch 15, so this is a real plateau, not a budget cutoff) on
+the full scored CricketVision pool (3,662 train / 655 val / 496 test):
+
+| | mean Spearman | mean R-l2 | partial-rho vs overall |
+|---|---|---|---|
+| Timesformer encoder (seed 0) | 0.378 | 3.44 | -0.009 |
+| pose-GRU baseline (3-seed, PROGRESS.md 2026-10-17) | **0.588 +/- 0.006** | **2.55 +/- 0.03** | **0.122 +/- 0.013** |
+
+**A clear, unambiguous loss** -- the gap (0.378 vs 0.588 mean Spearman) is roughly 35x the GRU baseline's
+own seed-to-seed std, so this isn't single-seed noise the way the shot-classifier comparisons were; no
+multi-seed re-check needed to trust the direction. Validation Spearman across epochs (0.298 -> 0.123 ->
+0.091 -> ... -> peak 0.489 at epoch 12 -> 0.466 at epoch 15) never got close to the GRU's test-set 0.588,
+and partial-rho stayed in the 0.03-0.07 range throughout training (GRU: 0.122) -- a structural gap, not
+a still-converging one.
+
+**Honest reading: the video-transformer advantage found for shot classification does NOT transfer to
+technique scoring.** Plausible reasons, worth stating rather than guessing at a fix: (1) the scored pool
+is ~3x smaller (3,662 vs 11,133 train clips) than the classification pool, and the compute-redesign
+needed to make Timesformer's cost tractable here (one random exemplar/query/epoch, exemplar embeddings
+cached without gradient -- see kaggle/technique-scorer-timesformer/timesformer_scorer.py's module
+docstring) likely makes the training signal noisier per epoch than the classifier ever had to deal with;
+(2) technique scoring may genuinely lean more on precise joint/limb geometry (what pose data encodes
+directly) than on the global pixel-level appearance a video transformer's CLS token captures -- unlike
+"which shot was this," "how good was the technique" plausibly needs the finer-grained structure pose
+data provides. Not further tuned -- this is reported as a clean negative result for the ablation section,
+exactly the kind of finding the supervisor's "try it and show the backing" ask was for, and it directly
+answers the GRU-architectural-change question: replacing the GRU with the approach that won elsewhere in
+this project does not win here.
+
+### Update 2026-10-29: ST-GCN encoder for the technique scorer -- also loses, 3-seed confirmed
+
+Second attempt at the GRU-architectural-change question, this time exploiting skeletal joint-connectivity
+the GRU discards entirely: a small ST-GCN (Yan et al., AAAI 2018, arXiv:1801.07455) -- 3 blocks, each a
+fixed-adjacency graph convolution (symmetric-normalised COCO-17 skeleton, 19 anatomical edges) followed by
+a per-joint temporal Conv1d -- in place of the Siamese GRU, same exemplar-pairing/diff-head/residual-target
+training loop otherwise unchanged (`models/train_technique_scorer_stgcn.py`). Two real engineering bugs
+hit and fixed along the way: (1) exhaustively pairing every query with every same-shot exemplar, reused
+verbatim from the GRU script, turned out ~8-10x more expensive per epoch for this encoder in practice
+(each block's graph einsum + Conv1d + BatchNorm runs twice per pair) -- measured at >1.5h for 6 epochs on
+Kaggle CPU; fixed with `RandomPairDataset` (one random same-shot exemplar per query per access, eval/test
+unchanged) for a ~7-8x local speedup, confirmed by smoke test (14.2s -> 1.9s/epoch, 200 clips); (2) Kaggle's
+free CPU tier was itself ~9x slower than this environment's local CPU for the same workload even after that
+fix (one full local epoch measured at 60.6s vs the Kaggle diagnostic's >55 min for 6 epochs) -- GPU was
+considered and rejected (shikkoustic had only 4.53h GPU quota left this week, and the model's tiny
+batch-size-64 workload was never expected to benefit much from it), so the authoritative run moved to local
+CPU instead, ~2.2h for all 3 seeds.
+
+3-seed result (seeds 0/1/2, identical config to the GRU's winning run -- residual targets, lr=3e-4,
+hidden=128, patience=15):
+
+| | mean Spearman | mean R-l2 | partial-rho vs overall |
+|---|---|---|---|
+| ST-GCN (seed 0) | 0.492 | 3.03 | 0.134 |
+| ST-GCN (seed 1) | 0.457 | 3.67 | 0.096 |
+| ST-GCN (seed 2) | 0.462 | 3.06 | 0.119 |
+| **ST-GCN (3-seed mean)** | **0.470 +/- 0.015** | **3.25 +/- 0.29** | **0.116 +/- 0.016** |
+| pose-GRU baseline (3-seed, PROGRESS.md 2026-10-17) | **0.588 +/- 0.006** | **2.55 +/- 0.03** | **0.122 +/- 0.013** |
+
+**Another clean loss, and this time the hoped-for metric doesn't move either.** Spearman is consistently
+~20% lower across all 3 seeds (not noise -- the gap is ~8x the GRU's own seed std), R-l2 is worse with
+roughly 10x the GRU's seed-to-seed variance (0.29 vs 0.03), and partial-rho -- the metric the graph-based
+joint-connectivity idea was specifically supposed to help, since it's a structural, per-part signal -- lands
+within noise of the GRU's own 0.122 +/- 0.013, not above it. Exploiting skeletal connectivity explicitly,
+rather than leaving the GRU to (possibly) discover it implicitly, did not translate into better per-part
+discrimination in this implementation. Not further tuned -- reported as a second honest negative result for
+the ablation section, alongside the Timesformer-scorer loss above: two architecturally different attempts
+to beat the GRU on this task (one trading pose structure for pixel appearance, one adding explicit graph
+structure on top of pose) have now both failed to improve on it, which is itself informative for the paper's
+discussion of why the residual-target *label* fix, not an encoder change, is the real lever for this task.
+
 ## Open decisions
 - Practice/nets/shadow-batting videos (no bowler or ball) are parked; focus is match clips for now.
