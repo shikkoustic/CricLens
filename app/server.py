@@ -32,6 +32,7 @@ JOBS_DIR, THUMBS = RUNTIME / "jobs", RUNTIME / "thumbs"
 SAMPLES_DIR = Path(os.environ.get("CRICLENS_SAMPLES_DIR", ROOT / "data/interim/clips"))
 SAMPLE_LIMIT = int(os.environ.get("CRICLENS_SAMPLE_LIMIT", "48"))
 KEEP_JOBS = int(os.environ.get("CRICLENS_KEEP_JOBS", "40"))
+HERO_MONTAGE = ROOT / "data/interim/hero_montage.mp4"
 MAX_UPLOAD = 150 * 1024 * 1024
 VIDEO_EXT = {".mp4", ".mov", ".avi", ".mkv", ".webm", ".m4v"}
 MEDIA_NAME = re.compile(r"^[a-z_]+\.(mp4|jpg)$")
@@ -287,6 +288,20 @@ app.mount("/static", _NoCacheStatic(directory=APP / "static"), name="static")
 
 
 _NO_CACHE = {"Cache-Control": "no-cache"}
+
+
+@app.get("/api/hero.mp4")
+def hero_montage():
+    """A short crossfaded montage of real strokes, played behind the home-page headline.
+
+    Built once with `scripts/build_hero_montage.py` into data/ (gitignored, never committed) --
+    the source clips are broadcast-derived, same rule as every clip served elsewhere in this app
+    (see /api/samples/{id}/video). If it hasn't been built on this machine, the home page just
+    shows its gradient rather than erroring.
+    """
+    if not HERO_MONTAGE.is_file():
+        raise HTTPException(404)
+    return FileResponse(HERO_MONTAGE, media_type="video/mp4")
 
 
 @app.get("/")
