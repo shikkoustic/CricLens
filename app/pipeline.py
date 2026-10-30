@@ -103,8 +103,19 @@ class Analyzer:
         self.scorer_fallback.eval()
         self.ref = json.load(open(ROOT / "app/reference.json"))
         self.exemplars = self._load_exemplars()
+        self.best_reference = self._best_references()
 
     # ---- technique scorer ---------------------------------------------------------------------------
+    @staticmethod
+    def _best_references() -> dict[str, dict]:
+        """The single highest-score_overall exemplar per shot, for the side-by-side "how a
+        well-rated shot looks" comparison -- same kaggle/exemplars.csv the scorer already uses,
+        just reading the clip instead of its embedding. Only covers the five shots with
+        exemplars (see score_technique)."""
+        ex = pd.read_csv(ROOT / "kaggle/exemplars.csv")
+        best = ex.loc[ex.groupby("shot")["score_overall"].idxmax()]
+        return {r.shot: {"clip_id": r.clip_id, "source": r.source, "score_overall": float(r.score_overall)}
+                for r in best.itertuples()}
     def _load_exemplars(self) -> dict[str, tuple]:
         """Cache each exemplar's embedding once at startup, grouped by shot -- the contrastive
         scorer only ever compares a query against same-shot exemplars. Scores only, in residual
@@ -363,6 +374,7 @@ class Analyzer:
         levels = self.ref["quantile_levels"]
         score_ref = shot if shot in self.ref["score"] else "all"
         sq = self.ref["score"][score_ref]
+        reference = self.best_reference.get(shot)
 
         progress("metrics", 0.78)
         cal_frames = [frames[i] for i in sample_idx]
@@ -392,7 +404,7 @@ class Analyzer:
             "technique": {"overall": scores["overall"], "overall_pct": _pct(scores["overall"], sq["overall"], levels),
                           "reference_shot": score_ref,
                           "parts": [{"part": p, "score": scores[p], "pct": _pct(scores[p], sq[p], levels)} for p in PARTS]},
-            "metrics": metrics, "media": media, "warnings": warnings}
+            "metrics": metrics, "media": media, "warnings": warnings, "reference": reference}
 
     # ---- overlay ----------------------------------------------------------------------------------
     @staticmethod

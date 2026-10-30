@@ -267,6 +267,13 @@ body.home main { padding: 0 0 24px; }
 .metric.na .value { font-size: 18px; color: var(--muted); }
 .metrics-foot { grid-column: 1 / -1; margin: 0; font-size: 12.5px; color: var(--muted); }
 
+.compare-card { grid-column: 1 / -1; }
+.compare-title { font-size: 18px; margin: 0 0 14px; }
+.compare-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.compare-side video { display: block; width: 100%; aspect-ratio: 16/9; object-fit: cover; border-radius: 10px; background: #000; }
+.compare-label { margin: 0 0 8px; font-size: 13px; font-weight: 600; color: var(--muted); }
+@media (max-width: 700px) { .compare-grid { grid-template-columns: 1fr; } }
+
 .coach-card { grid-column: 1 / -1; }
 .badge { font-size: 12px; padding: 3px 10px; border-radius: 99px; background: var(--accent-soft); color: var(--accent); font-weight: 600; }
 .coach-text { font-size: 15.5px; line-height: 1.65; }
