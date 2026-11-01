@@ -30,6 +30,7 @@ ROOT = APP.parent
 RUNTIME = APP / "runtime"
 JOBS_DIR, THUMBS = RUNTIME / "jobs", RUNTIME / "thumbs"
 SAMPLES_DIR = Path(os.environ.get("CRICLENS_SAMPLES_DIR", ROOT / "data/interim/clips"))
+SOURCES = {p.name for p in SAMPLES_DIR.iterdir() if p.is_dir()} if SAMPLES_DIR.is_dir() else set()
 SAMPLE_LIMIT = int(os.environ.get("CRICLENS_SAMPLE_LIMIT", "48"))
 KEEP_JOBS = int(os.environ.get("CRICLENS_KEEP_JOBS", "40"))
 HERO_MONTAGE = ROOT / "data/interim/hero_montage.mp4"
@@ -216,6 +217,22 @@ def sample_video(sample_id: str):
     if s is None:
         raise HTTPException(404)
     return FileResponse(s["path"], media_type="video/mp4")
+
+
+CLIP_ID = re.compile(r"^[A-Za-z0-9_-]+$")
+
+
+@app.get("/api/reference/{source}/{clip_id}/video")
+def reference_video(source: str, clip_id: str):
+    """A well-rated example clip (kaggle/exemplars.csv) to compare a result against. Same
+    local-only serving as every other dataset clip: never copied into static/, just read off
+    disk for a request that's already running on this machine."""
+    if not (source in SOURCES and CLIP_ID.match(clip_id)):
+        raise HTTPException(404)
+    p = SAMPLES_DIR / source / f"{clip_id}.mp4"
+    if not p.is_file():
+        raise HTTPException(404)
+    return FileResponse(p, media_type="video/mp4")
 
 
 class SampleReq(BaseModel):

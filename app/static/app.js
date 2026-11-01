@@ -203,9 +203,22 @@ function renderResults(jobId, name, r) {
   }
 
   renderMetrics(r.metrics);
+  renderCompare(r, media(r.media.video));
   renderCoach(r.coach);
   renderDetails(r);
   show("view-results");
+}
+
+// side-by-side: the overlay clip the viewer just watched, next to a well-rated example of the
+// same shot (only exists for the five shots CricketVision scored enough of -- see app/pipeline.py)
+function renderCompare(r, yoursSrc) {
+  const card = $("compare-card");
+  if (!r.reference) { card.hidden = true; return; }
+  card.hidden = false;
+  $("compare-title").textContent = `How a well-rated ${labelName(r.shot.label).toLowerCase()} looks`;
+  $("compare-score").textContent = `Reference scored ${r.reference.score_overall.toFixed(1)}/10`;
+  $("compare-yours").src = yoursSrc;
+  $("compare-reference").src = `/api/reference/${r.reference.source}/${r.reference.clip_id}/video`;
 }
 
 // The clip as a strip: the analysed window is lit, the three phases are marked, and the playhead
