@@ -289,6 +289,48 @@ body.home main { padding: 0 0 24px; }
 .details dd { margin: 2px 0 0; font-weight: 600; font-variant-numeric: tabular-nums; }
 .footer { padding: 24px 20px 36px; text-align: center; }
 
+/* ============================================================
+   Analyse page: glass over the field, not paper on it.
+   Same --glass/--glass-blur tokens the hero already defines for chrome
+   sitting on footage -- here there's no footage behind the cards, so a
+   few soft, blurred field-colour blobs sit fixed behind the page instead,
+   giving every .card something to actually blur.
+   ============================================================ */
+.field-glow { position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
+.field-glow span { position: absolute; border-radius: 50%; filter: blur(64px); }
+.field-glow span:nth-child(1) { top: -14%; left: -10%; width: 44vw; height: 44vw; min-width: 320px; min-height: 320px; background: var(--accent); opacity: .22; }
+.field-glow span:nth-child(2) { top: 14%; right: -14%; width: 36vw; height: 36vw; min-width: 280px; min-height: 280px; background: var(--floodlight); opacity: .16; }
+.field-glow span:nth-child(3) { bottom: -18%; left: 22%; width: 40vw; height: 40vw; min-width: 300px; min-height: 300px; background: var(--ball); opacity: .13; }
+:root[data-theme="dark"] .field-glow span:nth-child(1) { opacity: .28; }
+:root[data-theme="dark"] .field-glow span:nth-child(2) { opacity: .16; }
+:root[data-theme="dark"] .field-glow span:nth-child(3) { opacity: .14; }
+@media (prefers-reduced-motion: reduce), (max-width: 560px) { .field-glow { opacity: .7; } }
+
+body.analyze { position: relative; }
+body.analyze .topbar, body.analyze main { position: relative; z-index: 1; }
+/* the bar under the hairline needs to float on the same glow, not a flat strip */
+body.analyze .topbar { background: var(--glass); backdrop-filter: blur(var(--glass-blur)); -webkit-backdrop-filter: blur(var(--glass-blur)); }
+
+body.analyze .card {
+  background: var(--glass-2);
+  border: 1px solid var(--glass-brd);
+  backdrop-filter: blur(var(--glass-blur)) saturate(1.35);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(1.35);
+  box-shadow: var(--shadow-lg), inset 0 1px 0 rgba(255, 255, 255, .4);
+}
+:root[data-theme="dark"] body.analyze .card { box-shadow: var(--shadow-lg), inset 0 1px 0 rgba(255, 255, 255, .07); }
+/* a dashed dropzone and image-backed thumbnails need real contrast underneath them,
+   so they stay solid surfaces set inside the glass rather than glass themselves */
+body.analyze .dropzone, body.analyze .file-chosen, body.analyze .sample,
+body.analyze .metric, body.analyze .findings li, body.analyze .kf {
+  background: color-mix(in srgb, var(--surface-2) 88%, transparent);
+}
+/* browsers with no backdrop-filter get the plain opaque card back, not a washed-out one */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  body.analyze .card { background: var(--surface); }
+  .field-glow { display: none; }
+}
+
 /* ============ home page (see the cricket theme block at the end of this file) ============ */
 
 @media (max-width: 900px) {
