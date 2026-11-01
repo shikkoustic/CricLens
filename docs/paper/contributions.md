@@ -85,6 +85,12 @@ check for."
 
 **Robustness already established**, worth citing together as "we checked the obvious alternative
 explanations before claiming this":
+- **Paired bootstrap significance test (`models/significance_test.py`, 2000 resamples over the fixed
+  496-clip test set): the partial-rho gain is significant (95% CI [+0.049, +0.165], 2000/2000 resamples
+  favoured the contrastive model), the raw-Spearman difference is not (95% CI [-0.055, +0.012], crosses
+  zero).** This is the strongest evidence in the section — unlike the seed sweep below, it isolates
+  "is model A better than model B on this test set" from "how much does training vary," and says the
+  partial-rho win survives that isolation while the apparent Spearman cost does not.
 - 3-seed variance check on the winning config: 0.588 +/- 0.006 Spearman, 0.122 +/- 0.013 partial-rho —
   tight, not a lucky run.
 - Inter-annotator-agreement ceiling check: ruled out as infeasible (CricketVision's "double-annotated"
@@ -177,13 +183,27 @@ run is exactly the kind of claim the seed-variance protocol exists to catch.
 
 ## Open items before this framing is submission-ready
 
-1. **The seed-2 contrastive-residual checkpoint (the number this whole section leans on) needs to
-   exist as a reproducible artifact, not just prose in `PROGRESS.md`.** See the app-integration PR
-   stack: it was never saved anywhere retrievable and is being regenerated now.
-2. **Statistical significance, not just descriptive variance, on the headline partial-rho gain.** The
-   3-seed mean +/- std (0.122 +/- 0.013 vs baseline's single-run 0.019) reads as a clear gap, but a
-   paired or bootstrap test against the baseline (ideally also seed-swept) would make "6x improvement"
-   a number a reviewer can't wave away as "different seeds, different luck."
+1. **DONE (2026-10-30).** The seed-2 contrastive-residual checkpoint had never been saved anywhere
+   retrievable; reproduced locally (`models/significance_test.py`'s docstring and the app-integration
+   PR stack have the details) and is now what the app actually serves.
+2. **DONE (2026-11-01). Statistical significance, not just descriptive variance, on the headline
+   partial-rho gain.** `models/significance_test.py`: a paired bootstrap (2000 resamples) over the
+   identical 496-clip test set, both models' predictions resampled together so the comparison isn't
+   confounded by which clips land in which resample.
+
+   | metric | VAE baseline | Contrastive + residual | bootstrap 95% CI of the gap | significant? |
+   |---|---|---|---|---|
+   | mean Spearman | 0.601 | 0.580 | [-0.055, +0.012] | No -- crosses zero |
+   | mean partial-rho vs overall | 0.019 | 0.125 | [+0.049, +0.165] | **Yes** -- 2000/2000 resamples favoured the contrastive model |
+
+   This is a stronger claim than the 3-seed descriptive comparison it replaces as the paper's primary
+   evidence: the partial-rho gain holds up under resampling of the test set itself (not just across
+   training seeds), and the raw-Spearman number some of the point estimates suggested was "worse" is
+   **not actually statistically distinguishable from the baseline** at this sample size -- so the
+   honest claim is "no significant loss on the metric everyone else reports, a significant and robust
+   gain on the metric that measures what this paper is actually about." Reproduce with
+   `python models/significance_test.py` (CPU, well under a minute; the two checkpoints' forward passes
+   plus 2000 resamples over 496 clips, no training involved).
 3. **Decide, explicitly, whether §3 (the benchmark) is a releasable artifact** (manifests + dedupe
    clusters + splits published alongside the paper) or stays internal. This changes how strong a claim
    §3 can make.
