@@ -900,5 +900,35 @@ Still open: re-run `scripts/app_smoke.py` against this updated pipeline for a fr
 baseline (the existing one, `docs/app/smoke_baseline_20260924.json`, predates this change, the LLM
 removal, and the 2026-10-17 batter-finder retrain).
 
+### Update 2026-11-01: paired bootstrap significance test on the headline partial-rho gain
+
+Every number reported for the contrastive-residual result so far answers "how much does this vary
+across training seeds" -- a real question, but not the same one as "on the actual fixed test set,
+is this model better than the baseline, or could the gap be explained by which clips happened to
+land in the test split." `models/significance_test.py` answers the second question directly: both
+checkpoints' predictions on the identical 496-clip test set (train_ready, scored, shot != other,
+exemplars excluded -- the stricter of the two training scripts' filters, applied to both so the
+comparison is apples-to-apples), resampled together 2000 times (paired bootstrap, Efron &
+Tibshirani).
+
+| metric | VAE baseline | Contrastive + residual | bootstrap 95% CI of the gap | significant? |
+|---|---|---|---|---|
+| mean Spearman | 0.601 | 0.580 | [-0.055, +0.012] | No -- crosses zero |
+| mean partial-rho vs overall | 0.019 | 0.125 | [+0.049, +0.165] | **Yes** -- 2000/2000 resamples favoured the contrastive model |
+
+**This is the strongest evidence yet for the paper's central claim, and it sharpens the honest
+framing rather than just restating it.** The partial-rho gain isn't just a seed-mean that looks
+bigger than its std -- it holds up under resampling of the test set itself, with literally zero of
+2000 resamples disagreeing. And the raw-Spearman number that earlier looked like a cost (0.580 vs
+0.601, or 0.562-0.588 depending on which run) turns out **not to be statistically distinguishable
+from the baseline at this sample size** -- the 95% CI spans zero. So the defensible claim going
+into the paper is sharper than "same ballpark, better at the thing that matters": it's "no
+significant cost on the metric the field reports, a significant and robust gain on the metric that
+measures genuine per-part discrimination." `docs/paper/contributions.md` updated accordingly
+(the §2 "robustness already established" list and the open-items list both now point here).
+
+Reproduce: `python models/significance_test.py` -- CPU, under a minute (two forward passes over
+496 clips plus 2000 resamples, no training involved, so no need to route this one through Kaggle).
+
 ## Open decisions
 - Practice/nets/shadow-batting videos (no bowler or ball) are parked; focus is match clips for now.
