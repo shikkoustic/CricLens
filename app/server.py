@@ -5,6 +5,7 @@
 Models load once in the background at startup; jobs run one at a time on a single worker thread (the
 pose model is CPU-heavy, so parallel jobs would only slow each other down).
 """
+import json
 import os
 import queue
 import re
@@ -106,7 +107,17 @@ def discover_samples() -> dict[str, dict]:
     Only the five strokes in app.shots.SCORED are offered: those are the ones the technique
     scorer has an exemplar set and a per-shot reference for. Offering a stroke the app can name
     but cannot rate properly is a worse answer than not offering it at all.
+
+    app/demo_clips.json, if present, lists test clips the scorer rates well (built by
+    scripts/pick_demo_clips.py); those are placed first so the panel opens on strokes worth
+    looking at rather than on whatever sorts first. They are still held-out test clips -- the
+    UI labels the panel accordingly, so the ordering isn't passed off as a random sample.
     """
+    demo: dict[str, int] = {}
+    dj = APP / "demo_clips.json"
+    if dj.exists():
+        demo = {c["clip_id"]: c["model_pct"] for c in json.loads(dj.read_text())["clips"]}
+
     meta = {}
     mf = ROOT / "data/processed/manifest.parquet"
     if mf.exists():
@@ -127,6 +138,11 @@ def discover_samples() -> dict[str, dict]:
             by_source.setdefault(p.parent.name, []).append(p)
         by_shot[shot] = [p for row in zip_longest(*by_source.values()) for p in row if p]
 
+    # Demo clips first, in their own round-robin so the strokes stay mixed, then the rest.
+    rank = {c: i for i, c in enumerate(demo)}  # dict order = the file's, best-first per stroke
+    for paths in by_shot.values():
+        paths.sort(key=lambda p: (p.stem not in rank, rank.get(p.stem, 0)))
+
     out = {}
     for row in zip_longest(*(by_shot[s] for s in sorted(by_shot))):
         for p in row:
@@ -134,7 +150,8 @@ def discover_samples() -> dict[str, dict]:
                 continue
             sid = f"{p.parent.name}--{p.stem}"
             shot, _ = meta.get(p.stem, (None, None))
-            out[sid] = {"id": sid, "path": p, "source": p.parent.name, "label": shot}
+            out[sid] = {"id": sid, "path": p, "source": p.parent.name, "label": shot,
+                        "demo": demo.get(p.stem)}
             if len(out) >= SAMPLE_LIMIT:
                 return out
     return out
@@ -191,7 +208,8 @@ def health():
 
 @app.get("/api/samples")
 def samples():
-    return [{"id": s["id"], "source": s["source"], "label": s["label"], "thumb": f"/api/samples/{s['id']}/thumb.jpg"}
+    return [{"id": s["id"], "source": s["source"], "label": s["label"], "demo": s["demo"],
+             "thumb": f"/api/samples/{s['id']}/thumb.jpg"}
             for s in SAMPLES.values()]
 
 

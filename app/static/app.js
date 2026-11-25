@@ -82,7 +82,11 @@ async function loadSamples() {
       const cap = el("span", "cap");
       cap.append(el("b", null, s.label ? labelName(s.label) : "Clip"));
       b.append(img, cap, el("span", "check", "✓"));
-      b.title = s.label ? labelName(s.label) : "Clip";
+      // Word the badge from the clip's own percentile rather than a blanket "well played":
+      // scores for cut and pull/hook top out mid-distribution (see scripts/pick_demo_clips.py).
+      if (s.demo != null) b.append(el("span", "sample-tag", s.demo >= 70 ? "well played" : "above typical"));
+      b.title = (s.label ? labelName(s.label) : "Clip") +
+        (s.demo != null ? ` — scorer puts it at the ${ordinal(s.demo)} percentile for this stroke` : "");
       b.onclick = () => setChoice({ kind: "sample", id: s.id, label: s.label, source: s.source });
       box.append(b);
     }
@@ -197,8 +201,16 @@ function renderResults(jobId, name, r) {
   const ring = $("ring-fg"); ring.style.strokeDashoffset = 327;
   requestAnimationFrame(() => requestAnimationFrame(() => (ring.style.strokeDashoffset = 327 * (1 - t.overall / 10))));
   const refName = t.reference_shot === "all" ? "all rated shots" : `rated ${labelName(t.reference_shot).toLowerCase()}s`;
+  // The raw number alone misleads: coaches' own scores in CricketVision have a median of 6.3,
+  // so 6.4/10 is an average shot, not a poor one. Lead with where it sits in that distribution.
   const tp = $("tech-pct"); tp.textContent = "";
-  if (t.overall_pct != null) tp.append("Better than ", el("b", null, `${Math.round(t.overall_pct)}%`), ` of ${refName} in the coaching dataset.`);
+  if (t.overall_pct != null) {
+    const pc = Math.round(t.overall_pct);
+    const band = pc >= 85 ? ["Excellent", "good"] : pc >= 70 ? ["Strong", "good"]
+      : pc >= 35 ? ["About typical", "mid"] : pc >= 15 ? ["Below typical", "low"] : ["Well below typical", "low"];
+    tp.append(el("span", `verdict ${band[1]}`, band[0]));
+    tp.append(el("span", "verdict-sub", `${ordinal(pc)} percentile of ${refName} — better than ${pc}% of them.`));
+  }
   const parts = $("parts"); parts.textContent = "";
   for (const p of t.parts) {
     const row = el("div", "part");

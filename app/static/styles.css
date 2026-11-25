@@ -767,3 +767,20 @@ body.analyze .metric, body.analyze .findings li, body.analyze .kf {
   .pick-hero { padding: 92px 0 64px; }
   .picker { width: calc(100vw - 20px); max-height: 88vh; }
 }
+
+/* "well played" marker on the curated demo clips in the picker. */
+.sample-tag {
+  position: absolute; left: 8px; top: 8px; z-index: 2;
+  padding: 2px 7px; border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 92%, black); color: #fff;
+  font-size: .62rem; font-weight: 600; letter-spacing: .02em;
+  text-transform: uppercase; pointer-events: none;
+}
+
+/* Technique verdict: the band word carries the meaning, the percentile backs it up. */
+.tech-pct { display: flex; flex-direction: column; gap: 4px; align-items: center; }
+.tech-pct .verdict { font-size: 1.02rem; font-weight: 650; letter-spacing: -.01em; }
+.tech-pct .verdict.good { color: var(--accent); }
+.tech-pct .verdict.mid  { color: var(--text); }
+.tech-pct .verdict.low  { color: var(--ball); }
+.tech-pct .verdict-sub { color: var(--muted); font-size: .78rem; line-height: 1.35; }
