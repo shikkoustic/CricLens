@@ -482,13 +482,16 @@ class Analyzer:
             v, band = m.get(key), bands.get(key)
             if v is None or band is None:
                 continue
-            # "inside" means within the middle half of well-rated clips -- the honest reading of
-            # a quartile band, rather than pretending the median is a target to hit exactly.
-            where = "inside" if band["p25"] <= v <= band["p75"] else ("above" if v > band["p75"] else "below")
+            # "inside" means within the 10th-90th percentile of well-rated clips of this stroke:
+            # the range four in five of them occupy. An interquartile band was tried first and is
+            # the wrong question -- half of all well-rated clips fall outside it by construction.
+            lo_b, hi_b = band["lo"], band["hi"]
+            where = "inside" if lo_b <= v <= hi_b else ("above" if v > hi_b else "below")
             items.append({
                 "key": key, "name": meta["name"], "unit": meta["unit"], "hint": meta["hint"],
                 "better": meta["better"], "value": round(float(v), 2),
-                "band": {"lo": band["p25"], "mid": band["p50"], "hi": band["p75"], "n": band["n"]},
+                "band": {"lo": lo_b, "mid": band["p50"], "hi": hi_b,
+                         "q1": band["p25"], "q3": band["p75"], "n": band["n"]},
                 "where": where,
                 "pct": _pct(v, meta["all"], ref["levels"]),
             })

@@ -32,6 +32,12 @@ from models.contact_checkpoints import CHECKPOINTS, measure  # noqa: E402
 LEVELS = list(range(0, 101, 5))
 WELL_RATED_PCT = 75     # "what good looks like" = the top quarter of that stroke's coach scores
 MIN_BAND_N = 25         # below this a stroke's band is too thin to show; the app falls back to all
+# The band spans the 10th-90th percentile of well-rated clips, not the interquartile range. The
+# UI calls it "the range well-rated drives sit in", and the IQR is not that range: by definition
+# only half of well-rated clips fall inside it, so even the best clips in the test set landed
+# outside 3 of the 5 bands and read as faulty. At 10-90, four in five well-rated clips are inside
+# and a marker outside the band means something.
+BAND_LO, BAND_HI = 10, 90
 
 
 def main():
@@ -69,7 +75,8 @@ def main():
         print(f"{c:>18} {rho:>8.3f} {p:>10.2g} {want:>10} {agrees:>8}   {tail}")
 
     # ---- the bands the app shows --------------------------------------------------------------
-    ref = {"levels": LEVELS, "well_rated_pct": WELL_RATED_PCT, "checkpoints": {}, "band": {}, "n": {}}
+    ref = {"levels": LEVELS, "well_rated_pct": WELL_RATED_PCT, "band_pcts": [BAND_LO, BAND_HI],
+           "checkpoints": {}, "band": {}, "n": {}}
     for c in CHECKPOINTS:
         v = df[c].dropna()
         ref["checkpoints"][c] = {**CHECKPOINTS[c], "all": np.percentile(v, LEVELS).round(4).tolist()}
@@ -84,18 +91,21 @@ def main():
             v = good[c].dropna()
             if len(v) < MIN_BAND_N:
                 continue
-            ref["band"][shot][c] = {"p25": round(float(v.quantile(.25)), 3),
+            ref["band"][shot][c] = {"lo": round(float(v.quantile(BAND_LO / 100)), 3),
+                                    "p25": round(float(v.quantile(.25)), 3),
                                     "p50": round(float(v.quantile(.50)), 3),
-                                    "p75": round(float(v.quantile(.75)), 3), "n": int(len(v))}
+                                    "p75": round(float(v.quantile(.75)), 3),
+                                    "hi": round(float(v.quantile(BAND_HI / 100)), 3),
+                                    "n": int(len(v))}
     (ROOT / "app/checkpoints_reference.json").write_text(json.dumps(ref, indent=1) + "\n")
 
-    print("\nWhat well-rated players do (median, with the middle half in brackets):")
+    print(f"\nWhat well-rated players do (median, with the {BAND_LO}-{BAND_HI} band in brackets):")
     print(f"{'stroke':>13} " + " ".join(f"{c[:13]:>15}" for c in CHECKPOINTS))
     for shot in list(SCORED) + ["all"]:
         cells = []
         for c in CHECKPOINTS:
             b = ref["band"][shot].get(c)
-            cells.append(f"{b['p50']:>6.2f} [{b['p25']:.2f}-{b['p75']:.2f}]".rjust(15) if b else "--".rjust(15))
+            cells.append(f"{b['p50']:>6.2f} [{b['lo']:.2f}-{b['hi']:.2f}]".rjust(15) if b else "--".rjust(15))
         n = ref["n"][shot]
         print(f"{shot:>13} " + " ".join(cells) + f"   (n={n['well_rated']} of {n['clips']})")
     print("\nwrote app/checkpoints_reference.json")
