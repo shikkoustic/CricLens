@@ -784,3 +784,39 @@ body.analyze .metric, body.analyze .findings li, body.analyze .kf {
 .tech-pct .verdict.mid  { color: var(--text); }
 .tech-pct .verdict.low  { color: var(--ball); }
 .tech-pct .verdict-sub { color: var(--muted); font-size: .78rem; line-height: 1.35; }
+
+/* ---- contact checkpoints ---------------------------------------------------------------
+   One row per measurement. The band is what well-rated clips of the same stroke do; the
+   marker is this batter. The row is meant to be readable at a glance before any text. */
+.checkpoints-card .cp-body { display: grid; grid-template-columns: 1fr; gap: 20px; }
+@media (min-width: 900px) { .checkpoints-card .cp-body { grid-template-columns: 1.15fr .85fr; } }
+
+.cp-list { display: flex; flex-direction: column; gap: 16px; }
+.cp-row { display: flex; flex-direction: column; gap: 6px; }
+.cp-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.cp-name { font-weight: 560; font-size: .92rem; }
+.cp-val { font-variant-numeric: tabular-nums; font-weight: 650; font-size: .95rem; }
+.cp-val small { font-weight: 400; color: var(--muted); font-size: .72rem; }
+
+.cp-bar { position: relative; height: 10px; border-radius: 999px; background: var(--surface-2); overflow: hidden; }
+.cp-band { position: absolute; top: 0; bottom: 0; border-radius: 999px;
+           background: color-mix(in srgb, var(--accent) 28%, transparent); }
+.cp-mid { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px;
+          background: color-mix(in srgb, var(--accent) 70%, transparent); }
+.cp-you { position: absolute; top: 50%; width: 12px; height: 12px; margin: -6px 0 0 -6px;
+          border-radius: 50%; background: var(--text); border: 2px solid var(--bg); }
+.cp-inside .cp-you { background: var(--accent); }
+.cp-above .cp-you, .cp-below .cp-you { background: var(--ball); }
+
+.cp-say { color: var(--muted); font-size: .78rem; line-height: 1.45; margin: 0; }
+.cp-inside .cp-say { color: var(--muted); }
+
+.cp-ghost { margin: 0; }
+.cp-ghost img { display: block; width: 100%; border-radius: var(--radius); background: var(--surface-2); }
+.cp-ghost figcaption { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px;
+                       margin-top: 10px; font-size: .78rem; }
+.cp-ghost .key { display: inline-flex; align-items: center; gap: 6px; }
+.cp-ghost .key i { width: 11px; height: 11px; border-radius: 3px; }
+.cp-ghost .k-you { background: #0071E3; }
+.cp-ghost .k-ref { background: #FF8B4A; }
+.cp-ghost figcaption .muted { flex-basis: 100%; }

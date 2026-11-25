@@ -157,6 +157,28 @@
           <div id="metrics" class="metrics"></div>
         </article>
 
+        <!-- Contact checkpoints: plain geometry a coach already talks about, each against what
+             well-rated players of the same stroke do. Separate from the Technique card on
+             purpose -- the score is a model's opinion, these are measurements. -->
+        <article id="checkpoints-card" class="card checkpoints-card" hidden>
+          <div class="card-head"><p class="eyebrow">At the moment of contact</p>
+            <button class="info" type="button" aria-describedby="cp-tip">?</button>
+            <span id="cp-tip" role="tooltip" class="tip">Measured from the joint positions in the contact frame, not predicted by a model. The green band is the middle half of well-rated clips of this same stroke. These checkpoints track coach scores only weakly, so read them as a comparison, not a verdict.</span>
+            <span id="cp-ref" class="badge"></span>
+          </div>
+          <div class="cp-body">
+            <div id="cp-list" class="cp-list"></div>
+            <figure id="cp-ghost" class="cp-ghost" hidden>
+              <img id="cp-ghost-img" alt="Your position at contact with a well-rated player's drawn over it">
+              <figcaption>
+                <span class="key"><i class="k-you"></i>You</span>
+                <span class="key"><i class="k-ref"></i><span id="cp-ghost-label">Well-rated example</span></span>
+                <span class="muted small" id="cp-ghost-note"></span>
+              </figcaption>
+            </figure>
+          </div>
+        </article>
+
         <article id="compare-card" class="card compare-card" hidden>
           <div class="card-head"><p class="eyebrow">Compare</p>
             <span id="compare-score" class="badge"></span></div>
