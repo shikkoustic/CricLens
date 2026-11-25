@@ -215,10 +215,11 @@ if (status) {
 }
 
 // ---------- the pitch strip ----------
-// A band along the foot of the window. Each of the three stages gets one beat, scrubbed by
-// how far that section has come up the screen: the beat finishes exactly as the section
-// lands, and runs backwards if you scroll back up. Decoration only — nothing here is
-// announced, and none of it is in the tab order.
+// A band along the foot of the window, playing continuously on its own clock: a drive, a
+// bowler taking the stumps, a throw from the deep, a throwdowns drill, then round again in a
+// fresh order. It used to be scrubbed by scroll position, one beat per section, which meant
+// it vanished in the gaps between sections and froze whenever the page was still. Decoration
+// only — nothing here is announced, and none of it is in the tab order.
 const pitch = document.getElementById("pitch");
 if (pitch && !reduced) {
   const byId = (id) => document.getElementById(id);
@@ -230,13 +231,35 @@ if (pitch && !reduced) {
   const arm = player.querySelector(".s-arm");
   const stumps = wicket.querySelector(".s-stumps");
 
-  // one beat per stage, in the order they appear
-  const beats = [...document.querySelectorAll("main .stage")].slice(0, 3)
-    .map((section, i) => ({ section, kind: ["shot", "throw", "drill"][i] }));
+  // The scenes, with how long each one runs. Lengths differ because the moves do: the drive is
+  // one swing and a ball running away, the drill is a feed, a shot and the coach's reply.
+  const SCENES = [
+    { kind: "shot", ms: 3400 },     // striker drives, ball runs away square
+    { kind: "bowled", ms: 4400 },   // bowler comes in, striker misses, stumps go
+    { kind: "throw", ms: 4000 },    // throw from the deep takes the wicket
+    { kind: "drill", ms: 5600 },    // throwdowns, and a note from the coach
+  ];
+  const GAP = 620;                  // empty band between scenes, so one clears before the next
+
+  // Shuffle a bag rather than cycling in order, so the strip doesn't read as a fixed loop,
+  // and never repeat across the join between two bags.
+  let order = [], cursor = 0;
+  const refill = () => {
+    const last = order.length ? order[order.length - 1] : -1;
+    do {
+      order = SCENES.map((_, i) => i);
+      for (let i = order.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [order[i], order[j]] = [order[j], order[i]];
+      }
+    } while (order[0] === last);
+    cursor = 0;
+  };
+  refill();
 
   const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
   const lerp = (a, b, t) => a + (b - a) * t;
-  // progress of one move inside a beat
+  // progress of one move inside a scene
   const at = (p, from, to) => clamp01((p - from) / (to - from));
   const put = (node, x, y) => { node.style.transform = `translate3d(${x}px, ${-(y || 0)}px, 0)`; };
   const vis = (node, on) => { node.style.display = on ? "" : "none"; };
@@ -246,28 +269,42 @@ if (pitch && !reduced) {
 
   const IMPACT = 0.9;   // when the ball reaches the stumps
 
-  let queued = false;
-  const draw = () => {
-    queued = false;
-    const W = innerWidth, vh = innerHeight;
+  // Clock. Kept as elapsed-within-scene rather than a page timestamp so that pausing in a
+  // hidden tab resumes mid-scene instead of jumping, and so a long pause can't land the strip
+  // thousands of scenes along.
+  let scene = SCENES[order[cursor]], elapsed = 0, prev = 0, playing = true;
 
-    // find the stage currently arriving, and how far in it is
-    // Run each beat across the section's whole pass through the viewport, not a fixed slice of
-    // scroll: the stages are tall now, so a fixed window saturated while the section was still
-    // on screen and the strip switched off for most of the scroll.
-    let beat = null, p = 0;
-    for (const b of beats) {
-      const r = b.section.getBoundingClientRect();
-      const t = clamp01((vh - r.top) / (vh + r.height));
-      if (t > 0.001 && t < 0.999) { beat = b; p = t; break; }
+  const resetActors = () => {
+    stumps.style.transform = "";
+    bailA.style.transform = "";
+    bailB.style.transform = "";
+    bubble.style.opacity = "0";
+  };
+
+  const advance = () => {
+    elapsed = 0;
+    if (++cursor >= order.length) refill();
+    scene = SCENES[order[cursor]];
+    resetActors();
+  };
+
+  const draw = (now) => {
+    const W = innerWidth;
+    if (playing && prev) {
+      // Cap the step so a dropped frame or a tab switch nudges the scene along rather than
+      // teleporting the ball across the band.
+      elapsed += Math.min(now - prev, 120);
     }
-    pitch.classList.toggle("on", !!beat);
-    if (!beat) return;
+    prev = now;
+    if (elapsed > scene.ms + GAP) advance();
 
-    const kind = beat.kind;
-    vis(batter, kind === "shot" || kind === "drill");
+    const p = clamp01(elapsed / scene.ms);
+    const between = elapsed > scene.ms;      // the gap: hold the end pose, hide the ball
+    const kind = scene.kind;
+
+    vis(batter, kind === "shot" || kind === "drill" || kind === "bowled");
     vis(player, kind !== "shot");
-    vis(wicket, kind === "throw");
+    vis(wicket, kind === "throw" || kind === "bowled");
     vis(bubble, kind === "drill");
 
     let ballX = 0, ballY = 0, travel = 0, ballOn = true;
@@ -283,6 +320,30 @@ if (pitch && !reduced) {
       ballX = lerp(figX - 6, -40, travel);
       ballOn = travel > 0 && travel < 1;
 
+    } else if (kind === "bowled") {
+      // the other half of the story: the bowler runs in, the striker swings past it, and the
+      // ball goes through to the stumps. Same sprites as the throw scene, read the other way
+      // round -- the wicket sits behind the striker rather than alone in the covers.
+      const bowlX = W * 0.1, strikerX = W * 0.74, wicketX = W * 0.84;
+      put(player, bowlX, 0);
+      put(batter, strikerX, 0);
+      put(wicket, wicketX, 0);
+      put(shadowFig, bowlX - 6, 0);
+      shadowFig.style.opacity = 1;
+      // over the top, then the striker's swing arrives late and misses
+      arm.style.transform = `rotate(${lerp(-160, 28, at(p, 0.06, 0.32))}deg)`;
+      bat.style.transform = `rotate(${lerp(36, -30, at(p, 0.6, 0.78))}deg)`;
+
+      travel = at(p, 0.28, IMPACT);
+      ballX = lerp(bowlX + 30, wicketX + 4, travel);
+      ballY = Math.abs(Math.sin(travel * Math.PI * 1.6)) * 30 * (1 - travel * 0.5);
+      ballOn = travel > 0 && travel < 1;
+
+      const k = at(p, IMPACT, 1);
+      stumps.style.transform = `rotate(${k * 12}deg)`;
+      bailA.style.transform = `translate3d(${k * 30}px, ${-k * 38}px, 0) rotate(${k * 320}deg)`;
+      bailB.style.transform = `translate3d(${k * 46}px, ${-k * 22}px, 0) rotate(${-k * 260}deg)`;
+
     } else if (kind === "drill") {
       // throwdowns, the drill the coach note actually asks for: one is fed in, the
       // striker plays it back past the feeder, and the coach has something to say
@@ -291,7 +352,7 @@ if (pitch && !reduced) {
       put(batter, strikerX, 0);
       put(shadowFig, coachX - 6, 0);
       shadowFig.style.opacity = 1;
-      // underarm, so it reads differently from the throw in the beat before
+      // underarm, so it reads differently from the bowler's arm in the other scenes
       arm.style.transform = `rotate(${lerp(64, -26, at(p, 0.04, 0.26))}deg)`;
       bat.style.transform = `rotate(${lerp(38, -44, at(p, 0.52, 0.68))}deg)`;
 
@@ -333,6 +394,7 @@ if (pitch && !reduced) {
       bailB.style.transform = `translate3d(${k * 44}px, ${-k * 20}px, 0) rotate(${-k * 240}deg)`;
     }
 
+    if (between) ballOn = false;
     roll(ball, ballX, ballY, travel * 2.2);
     ball.style.opacity = ballOn ? "1" : "0";
     put(shadowBall, ballX - 18, 0);
@@ -340,10 +402,18 @@ if (pitch && !reduced) {
     shadowBall.style.width = "34px";
   };
 
+  // Always on: the strip is no longer tied to which section is passing.
+  pitch.classList.add("on");
 
-  addEventListener("scroll", () => { if (!queued) { queued = true; requestAnimationFrame(draw); } }, { passive: true });
-  addEventListener("resize", draw);
-  draw();
+  const frame = (now) => { draw(now); requestAnimationFrame(frame); };
+  requestAnimationFrame(frame);
+
+  // A hidden tab gets no frames anyway; dropping the clock keeps the scene from jumping on
+  // return, and stops the strip burning a timeslice in a background tab.
+  document.addEventListener("visibilitychange", () => {
+    playing = !document.hidden;
+    if (playing) prev = 0;
+  });
 }
 
 // ---------- the stroke list opens a clip of that stroke ----------
