@@ -23,7 +23,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from app.shots import SHOTS
+from app.shots import SCORED
 
 APP = Path(__file__).resolve().parent
 ROOT = APP.parent
@@ -103,8 +103,9 @@ def discover_samples() -> dict[str, dict]:
     to offer the lot. Take test-split clips only and round-robin by shot, then by source,
     so the panel shows every shot type. Deterministic: same list on every start.
 
-    Clips labelled "other" are left out: the classifier is trained on the eight named shots and
-    has no "other" output, so offering one guarantees a wrong answer that tells nobody anything.
+    Only the five strokes in app.shots.SCORED are offered: those are the ones the technique
+    scorer has an exemplar set and a per-shot reference for. Offering a stroke the app can name
+    but cannot rate properly is a worse answer than not offering it at all.
     """
     meta = {}
     mf = ROOT / "data/processed/manifest.parquet"
@@ -115,7 +116,7 @@ def discover_samples() -> dict[str, dict]:
     by_shot: dict[str, list[Path]] = {}
     for p in sorted(SAMPLES_DIR.glob("*/*.mp4")):
         shot, split = meta.get(p.stem, (None, None))
-        if meta and (split != "test" or shot not in SHOTS):
+        if meta and (split != "test" or shot not in SCORED):
             continue
         by_shot.setdefault(shot or "other", []).append(p)
 

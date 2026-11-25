@@ -23,7 +23,7 @@ import torch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from app.shots import SHOTS  # noqa: E402
+from app.shots import SCORED_IDX, SHOTS  # noqa: E402
 from models.pitch_calibration import calibrate_clip, measure_stride_and_swing  # noqa: E402
 from models.resample_sequences import resample_clip  # noqa: E402
 from models.train_shot_classifier import make_model, normalise  # noqa: E402
@@ -364,7 +364,14 @@ class Analyzer:
             raise AnalysisError("The shot window was too short to analyse. Try a clip with the full swing visible.")
         x = torch.from_numpy(normalise(rs["seq"])).unsqueeze(0)
         with torch.no_grad():
-            probs = torch.softmax(self.classifier(x), 1)[0].numpy()
+            logits = self.classifier(x)[0].numpy()
+        # Restrict the call to the strokes the scorer can actually rate: a lofted/scoop/sweep
+        # prediction would be handed to the VAE fallback and benchmarked against all shots
+        # rather than its own, which reads to the viewer exactly like a properly scored one.
+        masked = np.full_like(logits, -np.inf)
+        masked[SCORED_IDX] = logits[SCORED_IDX]
+        e = np.exp(masked - masked[SCORED_IDX].max())
+        probs = e / e.sum()
         order = np.argsort(-probs)
         shot = SHOTS[int(order[0])]
 
@@ -400,7 +407,8 @@ class Analyzer:
                        "window": {"start": lo, "contact": contact, "end": hi,
                                   "start_s": lo / fps, "contact_s": contact / fps, "end_s": hi / fps}},
             "shot": {"label": shot, "display": SHOT_NAMES[shot], "confidence": float(probs[order[0]]),
-                     "probs": [{"label": SHOTS[i], "display": SHOT_NAMES[SHOTS[i]], "p": float(probs[i])} for i in order]},
+                     "probs": [{"label": SHOTS[i], "display": SHOT_NAMES[SHOTS[i]], "p": float(probs[i])}
+                               for i in order if np.isfinite(probs[i]) and i in SCORED_IDX]},
             "technique": {"overall": scores["overall"], "overall_pct": _pct(scores["overall"], sq["overall"], levels),
                           "reference_shot": score_ref,
                           "parts": [{"part": p, "score": scores[p], "pct": _pct(scores[p], sq[p], levels)} for p in PARTS]},
