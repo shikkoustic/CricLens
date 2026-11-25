@@ -42,6 +42,11 @@ document.getElementById("theme-toggle")?.addEventListener("click", () => {
 function setChoice(c) {
   choice = c;
   $("analyse").disabled = !c;
+  const picked = $("picked");
+  if (picked) {
+    picked.textContent = c ? (c.kind === "file" ? c.file.name : `${labelName(c.label) || "Sample"} · held-out clip`) : "";
+    picked.hidden = !c;
+  }
   $("input-error").hidden = true;
   document.querySelectorAll(".sample").forEach((b) => b.classList.toggle("on", c && c.kind === "sample" && b.dataset.id === c.id));
   const isFile = c && c.kind === "file";
@@ -346,7 +351,10 @@ function init() {
   ["dragleave", "drop"].forEach((ev) => dz.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.remove("drag"); }));
   dz.addEventListener("drop", (e) => pickFile(e.dataTransfer.files[0]));
   $("file-clear").onclick = () => { input.value = ""; setChoice(null); };
-  $("analyse").onclick = startAnalysis;
+  const picker = $("picker");
+  $("open-picker").onclick = () => picker.showModal();
+  $("picker-close").onclick = () => picker.close();
+  $("analyse").onclick = () => { picker.close(); startAnalysis(); };
   $("again").onclick = $("progress-back").onclick = () => { $("res-video").pause(); show("view-input"); setChoice(choice); };
   document.querySelectorAll(".speed button").forEach((b) => (b.onclick = () => {
     document.querySelectorAll(".speed button").forEach((x) => x.classList.toggle("on", x === b));

@@ -391,6 +391,10 @@ body.analyze .metric, body.analyze .findings li, body.analyze .kf {
 .tl-marks { position: relative; height: 34px; margin-top: 8px; }
 .tl-mark { position: absolute; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center;
   gap: 3px; background: none; border: 0; padding: 0; cursor: pointer; color: var(--muted); font-size: 11px; white-space: nowrap; }
+/* contact can land within a few percent of the clip's end, which used to run the last two
+   labels into each other: pin the outermost marks to the track's edges instead of centring them */
+.tl-mark:first-child { transform: translateX(0); align-items: flex-start; }
+.tl-mark:last-child { transform: translateX(-100%); align-items: flex-end; }
 .tl-mark i { width: 9px; height: 9px; border-radius: 50%; background: var(--surface); border: 2px solid var(--muted); }
 .tl-mark.contact i { background: var(--ball); border-color: var(--ball); box-shadow: 0 0 0 4px color-mix(in srgb, var(--ball) 22%, transparent); }
 .tl-mark:hover { color: var(--text); }
@@ -442,7 +446,7 @@ body.analyze .metric, body.analyze .findings li, body.analyze .kf {
 .nav a.on { background: var(--surface-2); border: 0; }
 
 /* hero: centred words, then the footage as the product shot */
-.hero { position: relative; padding: 168px 0 104px; text-align: center; overflow: hidden; }
+.hero { position: relative; padding: 180px 0 104px; text-align: center; overflow: hidden; }
 .hero::before { content: ""; position: absolute; left: 50%; top: 2%; width: min(1200px, 120vw); height: 700px;
   transform: translateX(-50%); pointer-events: none;
   background: radial-gradient(50% 50% at 50% 50%, var(--glow), transparent 72%); }
@@ -452,7 +456,7 @@ body.analyze .metric, body.analyze .findings li, body.analyze .kf {
 .eyebrow-media, .hero .eyebrow { color: var(--accent); font-size: 15px; font-weight: 600; letter-spacing: -.01em;
   text-transform: none; margin: 0 0 14px; }
 .hero-title { font-family: var(--font); font-weight: 700; font-size: clamp(50px, 8.2vw, 108px);
-  line-height: 1.03; letter-spacing: -.038em; color: var(--text); margin: 0 auto 24px; max-width: 15ch; }
+  line-height: 1.03; letter-spacing: -.038em; color: var(--text); margin: 0 auto 40px; max-width: 15ch; }
 .hero-title em { font-style: normal; font-weight: 700; color: var(--text); }
 .hero-sub { font-size: clamp(18px, 1.7vw, 22px); line-height: 1.52; letter-spacing: -.01em;
   color: var(--muted); max-width: 60ch; margin: 0 auto 38px; }
@@ -551,7 +555,7 @@ body.analyze .metric, body.analyze .findings li, body.analyze .kf {
 
 /* the coach */
 .coach-demo { margin: 0; }
-.coach-bubble { padding: 38px; border-left: 0; }
+.coach-bubble { padding: 38px; border-left: 0; border-color: var(--border-strong); box-shadow: var(--shadow); }
 .coach-bubble p { margin: 0 0 15px; line-height: 1.62; font-size: 17px; }
 .coach-bubble p:last-child { margin-bottom: 0; }
 .coach-bubble .drill { padding-top: 18px; border-top: 1px solid var(--border); color: var(--muted); font-size: 16px; }
@@ -722,3 +726,44 @@ body.analyze .metric, body.analyze .findings li, body.analyze .kf {
 .sd-foot { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 14px 20px 18px; }
 .sd-foot p { margin: 0; }
 @media (max-width: 560px) { .sd-foot { flex-direction: column; align-items: stretch; } }
+
+/* ============================================================
+   Analyse: a quiet page, with the clip picker floating over it
+   ============================================================ */
+.pick-hero { max-width: 640px; margin: 0 auto; padding: 120px 0 90px; text-align: center; }
+.pick-title { font-size: clamp(36px, 5vw, 60px); font-weight: 700; letter-spacing: -.03em; line-height: 1.06; margin: 0 0 18px; }
+.pick-sub { font-size: clamp(17px, 1.6vw, 20px); line-height: 1.5; color: var(--muted); margin: 0 0 34px; }
+.picked { margin: 22px 0 0; font-size: 15px; color: var(--muted); }
+.picked::before { content: "Selected · "; color: var(--accent); font-weight: 600; }
+
+.picker { width: min(760px, calc(100vw - 32px)); max-height: min(84vh, 760px); padding: 0; border: 0;
+  border-radius: var(--radius-lg); background: var(--bg); color: var(--text);
+  box-shadow: 0 30px 90px rgba(0, 0, 0, .22); overflow: hidden; }
+.picker::backdrop { background: rgba(0, 0, 0, .34); backdrop-filter: blur(6px); }
+.picker[open] { display: flex; flex-direction: column; animation: picker-in .3s var(--ease); }
+@keyframes picker-in { from { opacity: 0; transform: translateY(14px) scale(.98); } }
+@media (prefers-reduced-motion: reduce) { .picker[open] { animation: none; } }
+
+.picker-head { display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  padding: 22px 24px; border-bottom: 1px solid var(--border); flex: none; }
+.picker-title { font-size: 20px; font-weight: 650; letter-spacing: -.02em; margin: 0; }
+.picker-body { padding: 24px; overflow-y: auto; flex: 1 1 auto; }
+.picker-or { display: flex; align-items: center; gap: 14px; margin: 24px 0 18px; color: var(--muted); font-size: 14px; }
+.picker-or::before, .picker-or::after { content: ""; flex: 1; height: 1px; background: var(--border); }
+.picker-foot { display: flex; align-items: center; justify-content: flex-end; gap: 14px;
+  padding: 18px 24px; border-top: 1px solid var(--border); background: var(--surface); flex: none; }
+.picker-foot .error { margin: 0 auto 0 0; }
+
+.picker .dropzone { min-height: 150px; border-radius: var(--radius); border: 2px dashed var(--border-strong);
+  background: var(--surface); gap: 8px; }
+.picker .dropzone:hover, .picker .dropzone.drag { border-color: var(--accent); background: var(--accent-soft); }
+.picker .dz-icon { stroke: var(--accent); }
+.picker .samples { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 10px; }
+.picker .sample { border-radius: 12px; border: 1px solid var(--border); box-shadow: none; }
+.picker .sample:hover { transform: none; border-color: var(--border-strong); }
+.picker .sample.on { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+
+@media (max-width: 640px) {
+  .pick-hero { padding: 92px 0 64px; }
+  .picker { width: calc(100vw - 20px); max-height: 88vh; }
+}

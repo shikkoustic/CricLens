@@ -45,9 +45,24 @@
   <main class="wrap">
     <!-- 1. pick a clip -->
     <section id="view-input" class="view">
-      <div class="input-grid">
-        <div class="card">
-          <h2 class="card-title">Upload a clip</h2>
+      <div class="pick-hero">
+        <h1 class="pick-title">Analyse a delivery</h1>
+        <p class="pick-sub">Upload a short clip of one ball, or pick a held-out sample to see it work.</p>
+        <button id="open-picker" class="btn btn-lg btn-primary" type="button">Choose a clip
+          <span class="btn-arrow"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17 17 7M9 7h8v8"/></svg></span></button>
+        <p id="picked" class="picked" hidden></p>
+      </div>
+
+      <!-- the picker floats over the page rather than filling it -->
+      <dialog id="picker" class="picker" aria-labelledby="picker-title">
+        <div class="picker-head">
+          <h2 class="picker-title" id="picker-title">Choose a clip</h2>
+          <button type="button" class="icon-btn" id="picker-close" aria-label="Close">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+          </button>
+        </div>
+
+        <div class="picker-body">
           <label id="dropzone" class="dropzone" tabindex="0">
             <input id="file" type="file" accept="video/*" hidden>
             <svg class="dz-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m0 0-4 4m4-4 4 4M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg>
@@ -59,22 +74,16 @@
             <div class="file-meta"><strong id="file-name"></strong><span id="file-size"></span>
               <button id="file-clear" class="link" type="button">Choose a different file</button></div>
           </div>
-          <ul class="tips">
-            <li>Side-on or behind-the-bowler broadcast views work best.</li>
-            <li>Keep the batter in frame through the whole swing.</li>
-          </ul>
-        </div>
 
-        <div class="card">
-          <div class="card-head"><h2 class="card-title">Or try a sample</h2><span class="muted small">Held-out clips</span></div>
+          <div class="picker-or"><span>or pick a held-out sample</span></div>
           <div id="samples" class="samples"><p class="muted small">Loading samples…</p></div>
         </div>
-      </div>
 
-      <div class="actions">
-        <p id="input-error" class="error" role="alert" hidden></p>
-        <button id="analyse" class="btn btn-primary" type="button" disabled>Analyse shot</button>
-      </div>
+        <div class="picker-foot">
+          <p id="input-error" class="error" role="alert" hidden></p>
+          <button id="analyse" class="btn btn-primary" type="button" disabled>Analyse shot</button>
+        </div>
+      </dialog>
     </section>
 
     <!-- 2. progress -->
