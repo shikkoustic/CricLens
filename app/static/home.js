@@ -252,9 +252,13 @@ if (pitch && !reduced) {
     const W = innerWidth, vh = innerHeight;
 
     // find the stage currently arriving, and how far in it is
+    // Run each beat across the section's whole pass through the viewport, not a fixed slice of
+    // scroll: the stages are tall now, so a fixed window saturated while the section was still
+    // on screen and the strip switched off for most of the scroll.
     let beat = null, p = 0;
     for (const b of beats) {
-      const t = clamp01((vh - b.section.getBoundingClientRect().top) / (vh * 0.62));
+      const r = b.section.getBoundingClientRect();
+      const t = clamp01((vh - r.top) / (vh + r.height));
       if (t > 0.001 && t < 0.999) { beat = b; p = t; break; }
     }
     pitch.classList.toggle("on", !!beat);
