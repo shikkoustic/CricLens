@@ -1,8 +1,13 @@
 # CricLens progress (resume point)
 
-Last updated: 2026-09-24. Preprocessing, IVA experiments and phase-3 model training are done. The web
-app now runs end to end on a laptop and has been measured on 48 test clips (#22); the open work is the
-batter finder's confident wrong picks and the bat U-Net domain gap.
+Last updated: 2026-11-26. Preprocessing, IVA experiments and phase-3 model training are done, and the
+paper's results are settled (see the 2026-11-01 significance-test entry). The web app runs end to end
+on a laptop: it offers the five strokes the scorer can actually rate, reports a calibrated confidence
+and declines to call the ones it isn't sure of, scores technique against a per-stroke reference, and
+measures five coaching checkpoints at contact against what well-rated players do (2026-11-26 entry).
+Demos: IMD Friday 27 Nov, IVA Monday 30 Nov. Open work is the batter finder's confident wrong picks,
+the bat U-Net domain gap, and that the app serves the pose LSTM (0.785 macro-F1) rather than the
+plain Timesformer (0.797), which will not run on a laptop CPU.
 
 ## How Kaggle work runs
 Kaggle jobs run on Kaggle's servers and keep going when the laptop sleeps. Long jobs are split into
@@ -929,6 +934,82 @@ measures genuine per-part discrimination." `docs/paper/contributions.md` updated
 
 Reproduce: `python models/significance_test.py` -- CPU, under a minute (two forward passes over
 496 clips plus 2000 resamples, no training involved, so no need to route this one through Kaggle).
+
+### Update 2026-11-26: the app gained a feature, and its confidence number became honest
+
+Two days out from the demos (IMD Friday 27th, IVA Monday 30th). Four changes to the app, all
+measured before being built rather than after.
+
+**1. Contact checkpoints (`models/contact_checkpoints.py`, `models/build_checkpoint_reference.py`).**
+The app could say 6.4/10 and not say why, and the part scores cannot fill that gap -- they are one
+latent factor wearing five hats (`docs/paper/finding_label_collinearity.md`), so "your hands scored
+6.1" is not actionable. So the app now also reports five pieces of plain geometry from the pose at
+the contact frame -- head over the front knee, front knee flex, front elbow, spine lean, stride --
+each against the range well-rated clips of the same stroke occupy. The front leg is inferred from
+which ankle travels further into the shot, not read from a handedness label: that label is missing
+for 15,528 of the 22,420 clips and absent entirely for an upload.
+
+Validated on 4,857 scored clips (99.9% gave a usable pose at contact). **Every checkpoint's sign
+lands where coaching orthodoxy independently says it should**:
+
+| checkpoint | rho vs coach score | p | expected sign | strongest stroke |
+|---|---|---|---|---|
+| front elbow | -0.182 | 3.2e-37 | - (tighter is better) | drive -0.226 |
+| front knee flex | -0.091 | 2.1e-10 | - (more flex is better) | cut -0.141 |
+| stride (torso units) | -0.048 | 0.00088 | ? | flick_glance -0.157 |
+| head over front knee | -0.045 | 0.0016 | - (nearer is better) | defence +0.107 |
+| spine lean | -0.042 | 0.0035 | - (more upright is better) | defence +0.104 |
+
+**The effects are small and two flip sign within defence, so these are presented in the app as a
+comparison and never as a verdict** -- the same honesty posture the collinearity finding forced on
+the scorer, applied to new work. They are not fitted to the coach scores and are not claimed to
+predict them; what they give the viewer is a number they can see in their own video.
+
+Alongside it, the stroke's best-rated exemplar is drawn over the batter's own contact frame:
+scaled so the torsos match, mirrored when the stances oppose, anchored at the hips, cropped to the
+two bodies so a wide broadcast shot stays readable, in blue/amber rather than red/green.
+
+**A band that was the wrong band.** The first version used the interquartile range of well-rated
+clips, which is not "the range well-rated players sit in" -- half of them fall outside an IQR by
+construction, so running the curated demo set through it put a typical good clip outside 3 of its 5
+bands (inside-counts 0-4, median 2) and made correct technique look broken. At the 10th-90th
+percentile the same 14 clips run 2-5 inside, median 4, and a flag carries information.
+
+**2. Classifier calibration (`models/calibrate_classifier.py`, `app/calibration.json`).** The app
+printed a raw softmax beside every call and that number was not honest: on the test split the
+five-way distribution the viewer reads was overconfident by 4.6 points (ECE 0.047), worst in the
+middle -- clips shown at 75% were right 65% of the time. Temperature scaling (Guo et al., 2017)
+fitted on val, never on test:
+
+| | accuracy | mean confidence | ECE | gap |
+|---|---|---|---|---|
+| raw softmax | 0.819 | 0.864 | 0.047 | +0.046 |
+| **T = 1.331** | 0.819 | 0.816 | **0.015** | **-0.002** |
+
+Applied *after* the five-stroke mask, because masking changes the denominator and a temperature
+fitted on the eight-way distribution corrects the wrong thing. Accuracy is unchanged by
+construction -- scaling cannot move an argmax.
+
+The same script picks an abstention threshold, 0.60, the lowest val threshold whose accepted clips
+clear 85%. Below it the app reads "Drive or Cut -- not sure, two candidates" instead of asserting.
+On test it answers for **83.9% of clips and is right 87.8% of the time when it does**, against
+81.9% if it always answers. Of the first three clips it declined to call, two had the true stroke
+as the second candidate.
+
+**3. Scores now lead with the percentile.** The scorer regresses onto CricketVision coaches' marks,
+whose median is 6.27, so 6.4/10 is an average shot and was reading as a failing one. The card leads
+with a band word from the percentile ("About typical", "Strong") and keeps the number beside it. A
+related bug: the body-part finding chose its weak spot and its best by percentile but printed the
+raw scores, so it could say "lowest 8.0, best 7.4" -- each part has its own reference distribution.
+
+**4. 28 curated demo clips (`scripts/pick_demo_clips.py`, `app/demo_clips.json`).** Held-out test
+clips the deployed scorer places above typical for their own stroke *and* the classifier labels
+correctly. The classifier filter is not cosmetic: selecting on score alone skewed the set toward
+full-extension strokes and dropped end-to-end accuracy to 50% (6 of 10 clips called a drive) against
+73% with it. A ceiling worth recording -- among the 150 candidates the classifier gets right, the
+highest percentile any cut reaches is 66 and any pull/hook 69, against 90 for drive and 87 for
+defence. The scorer's output is compressed for those two strokes, so a 75th-percentile bar emptied
+their rows for a reason that has nothing to do with the clips.
 
 ## Open decisions
 - Practice/nets/shadow-batting videos (no bowler or ball) are parked; focus is match clips for now.
