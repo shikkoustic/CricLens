@@ -109,6 +109,11 @@ class Analyzer:
         # file simply doesn't show the panel, rather than failing the whole analysis.
         cp = ROOT / "app/checkpoints_reference.json"
         self.checkpoint_ref = json.load(open(cp)) if cp.exists() else None
+        # Temperature + abstention threshold fitted on the val split by
+        # models/calibrate_classifier.py. Without the file the app falls back to the raw
+        # softmax, which is overconfident by ~5 points -- see that script's docstring.
+        cal = ROOT / "app/calibration.json"
+        self.calibration = json.load(open(cal)) if cal.exists() else None
         self.exemplars = self._load_exemplars()
         self.best_reference = self._best_references()
         self.reference_pose = self._load_reference_poses()
@@ -402,10 +407,20 @@ class Analyzer:
         # rather than its own, which reads to the viewer exactly like a properly scored one.
         masked = np.full_like(logits, -np.inf)
         masked[SCORED_IDX] = logits[SCORED_IDX]
+        # Temperature scaling, applied after the mask because masking changes the denominator:
+        # the number shown to the viewer is the one that has to be honest, and that number comes
+        # from the five-way softmax, not the eight-way one.
+        temp = float(self.calibration["temperature"]) if self.calibration else 1.0
+        masked = masked / temp
         e = np.exp(masked - masked[SCORED_IDX].max())
         probs = e / e.sum()
         order = np.argsort(-probs)
         shot = SHOTS[int(order[0])]
+        # Below the fitted threshold the app stops asserting one stroke. On the test split it
+        # then answers on 83.9% of clips and is right 87.8% of the time when it does, against
+        # 81.9% if it always answers.
+        floor = float(self.calibration["abstain_below"]) if self.calibration else 0.0
+        uncertain = bool(probs[order[0]] < floor)
 
         progress("technique", 0.74)
         pred = self.score_technique(x, shot)
@@ -445,6 +460,7 @@ class Analyzer:
                        "window": {"start": lo, "contact": contact, "end": hi,
                                   "start_s": lo / fps, "contact_s": contact / fps, "end_s": hi / fps}},
             "shot": {"label": shot, "display": SHOT_NAMES[shot], "confidence": float(probs[order[0]]),
+                     "uncertain": uncertain, "calibrated": self.calibration is not None,
                      "probs": [{"label": SHOTS[i], "display": SHOT_NAMES[SHOTS[i]], "p": float(probs[i])}
                                for i in order if np.isfinite(probs[i]) and i in SCORED_IDX]},
             "technique": {"overall": scores["overall"], "overall_pct": _pct(scores["overall"], sq["overall"], levels),

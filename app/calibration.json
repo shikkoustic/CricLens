@@ -1,0 +1,77 @@
+{
+ "model": "lstm",
+ "classes": [
+  "cut",
+  "defence",
+  "drive",
+  "flick_glance",
+  "pull_hook"
+ ],
+ "temperature": 1.3306,
+ "abstain_below": 0.6,
+ "fitted_on": "val",
+ "n_val": 1690,
+ "n_test": 1644,
+ "test_ece_before": 0.0466,
+ "test_ece_after": 0.0153,
+ "test_coverage": 0.8394,
+ "test_accuracy_when_answering": 0.8783,
+ "reliability_after": [
+  {
+   "lo": 0.2,
+   "hi": 0.3,
+   "n": 6,
+   "conf": 0.2682,
+   "acc": 0.3333
+  },
+  {
+   "lo": 0.3,
+   "hi": 0.4,
+   "n": 24,
+   "conf": 0.3515,
+   "acc": 0.375
+  },
+  {
+   "lo": 0.4,
+   "hi": 0.5,
+   "n": 97,
+   "conf": 0.4572,
+   "acc": 0.4433
+  },
+  {
+   "lo": 0.5,
+   "hi": 0.6,
+   "n": 137,
+   "conf": 0.5487,
+   "acc": 0.5839
+  },
+  {
+   "lo": 0.6,
+   "hi": 0.7,
+   "n": 171,
+   "conf": 0.6526,
+   "acc": 0.6082
+  },
+  {
+   "lo": 0.7,
+   "hi": 0.8,
+   "n": 168,
+   "conf": 0.7499,
+   "acc": 0.744
+  },
+  {
+   "lo": 0.8,
+   "hi": 0.9,
+   "n": 263,
+   "conf": 0.8548,
+   "acc": 0.8517
+  },
+  {
+   "lo": 0.9,
+   "hi": 1.0,
+   "n": 778,
+   "conf": 0.9644,
+   "acc": 0.9756
+  }
+ ]
+}

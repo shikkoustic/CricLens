@@ -182,11 +182,19 @@ function renderResults(jobId, name, r) {
 
   // shot
   const s = r.shot;
-  $("shot-name").textContent = s.display;
+  // Below the calibrated threshold the app names two strokes instead of asserting one. The
+  // threshold comes from the server (models/calibrate_classifier.py fitted it on val); the
+  // 0.6 here is only a fallback for an install with no calibration file.
+  const unsure = s.uncertain != null ? s.uncertain : s.confidence < 0.6;
+  const second = s.probs && s.probs[1];
+  $("shot-name").textContent = unsure && second ? `${s.display} or ${second.display}` : s.display;
   const tag = $("shot-tag");
-  const unsure = s.confidence < 0.6;
   tag.className = unsure ? "tag unsure" : "tag";
-  tag.textContent = unsure ? `Unsure · ${pct(s.confidence)}` : `${pct(s.confidence)} confident`;
+  tag.textContent = unsure ? "Not sure \u2014 two candidates" : `${pct(s.confidence)} confident`;
+  tag.title = s.calibrated
+    ? "Confidence is temperature-scaled on the validation split, so it means what it says: "
+      + "clips shown at 80% are right about 80% of the time."
+    : "Uncalibrated confidence.";
   const pb = $("shot-probs"); pb.textContent = "";
   s.probs.slice(0, 4).forEach((p, i) => {
     const row = el("div", i === 0 ? "prob top" : "prob");

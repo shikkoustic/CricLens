@@ -44,7 +44,9 @@ def findings(r: dict) -> dict:
     out, drills = [], []
 
     top, second = shot["probs"][0], shot["probs"][1]
-    if top["p"] >= 0.6:
+    # Follow the server's calibrated call rather than a second, different threshold here: two
+    # thresholds drift apart, and the card and the feedback then disagree about the same clip.
+    if not shot.get("uncertain", top["p"] < 0.6):
         out.append({"tone": "neutral", "title": f"Shot: {name}", "detail": f"Identified as a {lower} with {top['p']:.0%} confidence."})
     else:
         out.append({"tone": "caution", "title": f"Shot: probably a {lower}",
