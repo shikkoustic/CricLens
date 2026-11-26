@@ -163,6 +163,33 @@ rather than quietly dropping. Reporting the retraction alongside the finding is 
 methodological point worth keeping: a single-run bias-mitigation result that reverses under a second
 run is exactly the kind of claim the seed-variance protocol exists to catch.
 
+### 7. Supporting: the deployed system, and two honesty fixes it forced
+
+The web app is an engineering contribution, not a modeling one, but two things it forced are worth a
+short subsection because both are measurement, not plumbing.
+
+**Calibration.** The classifier's raw softmax, in the five-way form a user actually sees, is
+overconfident by 4.6 points on the test split (ECE 0.047), worst in the middle of the range: clips
+shown at 75% are right 65% of the time. One-parameter temperature scaling (Guo et al., 2017) fitted
+on val takes test ECE to 0.015 and the confidence gap to -0.002 with accuracy unchanged at 0.819, and
+an abstention threshold fitted the same way lets the system answer for 83.9% of clips at 87.8%
+accuracy rather than answering for all of them at 81.9%. Worth stating because the AQA and
+cricket-classification papers this project reviewed report accuracy and F1 and none report
+calibration, while every one of them would be deployed, if deployed at all, as a number shown to a
+player. (`models/calibrate_classifier.py`.)
+
+**Interpretable contact checkpoints, offered *because* of contribution 1.** If the five part scores
+are one latent factor (§1), then per-part coaching text built on them is not supportable, and the
+app should not pretend otherwise. So it reports instead five pieces of geometry measured from the
+pose at contact -- head over front knee, front knee flex, front elbow, spine lean, stride -- each
+against the 10th-90th percentile range of well-rated clips of the same stroke. Measured on 4,857
+scored clips, each one's sign agrees with coaching orthodoxy independently (front elbow strongest,
+rho = -0.182, p = 3e-37; -0.226 within drive), while the effect sizes are small and two flip sign
+within defence. **They are therefore presented as a comparison and never as a predictor of quality,
+and that restraint is the point**: it is contribution 1's conclusion carried through to what the
+system is willing to claim, rather than stated in a paper and ignored in the product.
+(`models/contact_checkpoints.py`, `models/build_checkpoint_reference.py`.)
+
 ## What this is *not* a paper about
 
 - **Not a shot-classification paper.** LSTM and Transformer are statistically tied (macro-F1

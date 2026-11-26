@@ -20,7 +20,7 @@
   </script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,500;0,600;1,500&family=Poppins:wght@400;500;600&display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
   <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body class="home">
@@ -52,36 +52,38 @@
     <!-- 1. what this is: the footage runs full bleed, the words sit on it -->
     <section class="hero">
       <div class="hero-frame">
-        <video id="hero-clip" class="hero-video" muted loop playsinline preload="auto" aria-hidden="true"></video>
-        <div class="hero-scrim" aria-hidden="true"></div>
-
-        <!-- the read-out, as a tracking monitor would show it -->
-        <div class="hero-hud" aria-hidden="true">
-          <div class="hud-row">
-            <span class="hud-tag"><i class="hud-rec"></i>Tracking</span>
-            <span class="hud-fps">30 FPS</span>
+        <div class="hero-copy">
+          <h1 class="hero-title">Every delivery <em>tells you something.</em></h1>
+          <div class="hero-actions">
+            <a class="btn btn-lg btn-primary" href="/analyze">Analyse a clip
+              <span class="btn-arrow"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17 17 7M9 7h8v8"/></svg></span></a>
+            <a class="btn btn-lg btn-ghost" href="#predict">See what it does
+              <span class="btn-arrow"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M6 13l6 6 6-6"/></svg></span></a>
           </div>
+        </div>
+
+        <!-- the montage, framed like a product shot -->
+        <div class="hero-media">
+          <div class="hero-shot">
+            <video id="hero-clip" class="hero-video" muted loop playsinline preload="auto" aria-hidden="true"></video>
+            <div class="hero-scrim" aria-hidden="true"></div>
+            <div class="hero-hud" aria-hidden="true">
+              <div class="hud-row">
+                <span class="hud-tag"><i class="hud-rec"></i>Tracking</span>
+                <span class="hud-fps">30 FPS</span>
+              </div>
+              </div>
+          </div>
+          <!-- readouts sit under the frame, not over it: the montage crossfades clips whose own
+               broadcast scoreboards sit at different heights, so nothing can safely overlay them -->
           <div class="hud-chips">
             <span class="chip"><b>Shot</b><span class="mono">Drive</span></span>
+            <span class="chip"><b>Confidence</b><span class="mono">94.2%</span></span>
             <span class="chip"><b>Stride</b><span class="mono">1.12 m</span></span>
             <span class="chip"><b>Hand speed</b><span class="mono">14.5 m/s</span></span>
           </div>
         </div>
-
-        <div class="hero-copy">
-          <p class="eyebrow eyebrow-media">Pose-based batting analysis</p>
-          <h1 class="hero-title">Every delivery<br><em>tells you something.</em></h1>
-          <p class="hero-sub">Play one clip. CricLens picks out the striker, follows every joint through the
-            stroke, and turns the movement into a shot, a score and a coaching note.</p>
-          <div class="hero-actions">
-            <a class="btn btn-lg btn-on-media" href="/analyze">Analyse a clip
-              <span class="btn-arrow"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17 17 7M9 7h8v8"/></svg></span></a>
-            <a class="btn btn-lg btn-glass" href="#predict">See what it does
-              <span class="btn-arrow"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M6 13l6 6 6-6"/></svg></span></a>
-          </div>
-        </div>
       </div>
-      <a class="scroll-cue" href="#predict" aria-label="Scroll down"><span></span></a>
     </section>
 
     <!-- 2. the shot -->
@@ -89,19 +91,16 @@
       <div class="wrap">
         <p class="eyebrow">First</p>
         <h2 class="stage-title">Which shot was that?</h2>
-        <p class="stage-sub">The joint sequence goes to a classifier trained on eight strokes. You get the call
+        <p class="stage-sub">The joint sequence goes to a classifier trained on these five strokes. You get the call
           and how certain it is &mdash; never a bare guess.</p>
         <ul class="shots">
           <li><button type="button" class="shot" data-shot="drive"><b>Drive</b><span class="shot-cue" aria-hidden="true"></span></button></li>
           <li><button type="button" class="shot" data-shot="cut"><b>Cut</b><span class="shot-cue" aria-hidden="true"></span></button></li>
           <li><button type="button" class="shot" data-shot="pull_hook"><b>Pull / Hook</b><span class="shot-cue" aria-hidden="true"></span></button></li>
-          <li><button type="button" class="shot" data-shot="sweep"><b>Sweep</b><span class="shot-cue" aria-hidden="true"></span></button></li>
           <li><button type="button" class="shot" data-shot="flick_glance"><b>Flick / Glance</b><span class="shot-cue" aria-hidden="true"></span></button></li>
           <li><button type="button" class="shot" data-shot="defence"><b>Defence</b><span class="shot-cue" aria-hidden="true"></span></button></li>
-          <li><button type="button" class="shot" data-shot="lofted"><b>Lofted</b><span class="shot-cue" aria-hidden="true"></span></button></li>
-          <li><button type="button" class="shot" data-shot="scoop"><b>Scoop</b><span class="shot-cue" aria-hidden="true"></span></button></li>
         </ul>
-        <p class="shots-hint small muted">Pick one to watch a held-out clip of that stroke.</p>
+        <p class="shots-hint">Pick one to watch a held-out clip of that stroke.</p>
       </div>
     </section>
 
@@ -139,7 +138,7 @@
               <svg class="px np-batter" viewBox="0 0 14 19"><use href="#px-batter"/></svg>
             </div>
             <div class="net-controls">
-              <button class="btn btn-sm net-go" id="net-go" type="button">
+              <button class="btn btn-sm btn-primary net-go" id="net-go" type="button">
                 <span id="net-go-label">Bowl</span>
                 <span class="btn-arrow"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span>
               </button>
@@ -156,8 +155,8 @@
         <div>
           <p class="eyebrow">Finally</p>
           <h2 class="stage-title">What do you work on?</h2>
-          <p class="stage-sub">The measurements are handed to a language model running on this machine, which
-            writes them up the way a coach would &mdash; what held up, what to work on, and a drill to go away with.</p>
+          <p class="stage-sub">The measurements are written up the way a coach would put them &mdash;
+            what held up, what to work on, and a drill to go away with.</p>
           <a class="btn btn-primary btn-lg" href="/analyze">Try it on a clip
             <span class="btn-arrow"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17 17 7M9 7h8v8"/></svg></span></a>
         </div>

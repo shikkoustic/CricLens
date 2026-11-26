@@ -29,6 +29,14 @@ def _band(p):
     return None if p is None else ("high" if p >= 70 else "low" if p < 35 else "mid")
 
 
+def ordinal(p: float) -> str:
+    """42.0 -> '42nd'. Percentiles read better than bare numbers in a sentence."""
+    n = int(round(p))
+    if 10 <= n % 100 <= 20:
+        return f"{n}th"
+    return f"{n}{ {1: 'st', 2: 'nd', 3: 'rd'}.get(n % 10, 'th') }"
+
+
 def findings(r: dict) -> dict:
     shot, tech, met = r["shot"], r["technique"], r["metrics"]
     name = shot["display"]
@@ -36,7 +44,9 @@ def findings(r: dict) -> dict:
     out, drills = [], []
 
     top, second = shot["probs"][0], shot["probs"][1]
-    if top["p"] >= 0.6:
+    # Follow the server's calibrated call rather than a second, different threshold here: two
+    # thresholds drift apart, and the card and the feedback then disagree about the same clip.
+    if not shot.get("uncertain", top["p"] < 0.6):
         out.append({"tone": "neutral", "title": f"Shot: {name}", "detail": f"Identified as a {lower} with {top['p']:.0%} confidence."})
     else:
         out.append({"tone": "caution", "title": f"Shot: probably a {lower}",
@@ -62,9 +72,14 @@ def findings(r: dict) -> dict:
     if parts:
         lo = min(parts, key=lambda p: p["pct"]); hi = max(parts, key=lambda p: p["pct"])
         if hi["pct"] - lo["pct"] >= 15:
+            # Compare on percentile, and report percentile. Each part has its own reference
+            # distribution, so the part furthest below typical can still carry the higher raw
+            # score -- reporting the raw numbers here read as a contradiction ("lowest 8.0,
+            # best 7.4").
             out.append({"tone": "improve", "title": f"Relative weak spot: {PART_NAMES[lo['part']]}",
-                        "detail": f"The lowest of the five body-part ratings here ({lo['score']:.1f}/10), while "
-                                  f"{PART_NAMES[hi['part']]} rated best ({hi['score']:.1f}/10)."})
+                        "detail": f"Furthest below typical of the five, at the {ordinal(lo['pct'])} percentile "
+                                  f"for {ref_name}, while {PART_NAMES[hi['part']]} sits at the "
+                                  f"{ordinal(hi['pct'])}."})
         else:
             out.append({"tone": "neutral", "title": "Even across body parts",
                         "detail": "Head, shoulders, hands, hips and feet all rated about the same, so the overall "

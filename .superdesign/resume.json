@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "projectId": "e963038f-1bba-4f86-a087-c67d0767d0c8",
+  "canvas": "https://superdesign.dev/teams/8b2082c7-079c-42f9-8fb6-10fd2f4535a9/projects/e963038f-1bba-4f86-a087-c67d0767d0c8",
+  "designSystem": ".superdesign/design-system.md",
+  "model": "claude-sonnet-5",
+  "targets": {
+    "/": {
+      "route": "/",
+      "entry": "app/static/home.html",
+      "baselineDraftId": "7fec4be0-492d-49d5-b812-76078fccb7c6",
+      "activeDraftId": null,
+      "branches": [
+        {
+          "draftId": "4cd7efb1-08f0-46bf-a96a-b74ed7a928f2",
+          "title": "CricLens Home - Blueprint",
+          "direction": "A - Blueprint"
+        },
+        {
+          "draftId": "894315ca-2b7c-43b4-83ee-9886d6a65eaa",
+          "title": "CricLens - Instrument Panel",
+          "direction": "B - Instrument panel"
+        }
+      ],
+      "contextFiles": [
+        ".superdesign/design-system.md",
+        "app/static/home.html:1:26",
+        "app/static/home.html:28:244",
+        "app/static/styles.css"
+      ],
+      "fingerprints": {
+        ".superdesign/design-system.md": "61a8b8e55d9d40fad75c143605f330249dbd2e67a255b507c0ee4f34813a499a",
+        "app/static/home.html": "3fd1bf9b2122d511613baaabd6e6e130ccc40ef3568111923b45ec8e6228c0c8",
+        "app/static/styles.css": "e1534c86f9c7ef1528f955e4a24747d99c8e9970a315c94096a62497dda934be"
+      },
+      "notes": "home.html line 27 is a ~17KB single-line pixel-art SVG symbol sheet; excluded from context on purpose. Net mini-game must be preserved."
+    }
+  }
+}

@@ -23,7 +23,9 @@ import torch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from app.shots import SHOTS  # noqa: E402
+from app.shots import SCORED_IDX, SHOTS  # noqa: E402
+from models.contact_checkpoints import (LHIP, LSH, RHIP, RSH, front_side,  # noqa: E402
+                                        measure as measure_checkpoints)
 from models.pitch_calibration import calibrate_clip, measure_stride_and_swing  # noqa: E402
 from models.resample_sequences import resample_clip  # noqa: E402
 from models.train_shot_classifier import make_model, normalise  # noqa: E402
@@ -102,8 +104,19 @@ class Analyzer:
         self.scorer_fallback.load_state_dict(torch.load(ROOT / "models/technique_scorer/vae_regressor.pt", map_location="cpu"))
         self.scorer_fallback.eval()
         self.ref = json.load(open(ROOT / "app/reference.json"))
+        # Contact checkpoints: plain geometry with a "what good looks like" band per stroke,
+        # built by models/build_checkpoint_reference.py. Optional -- an install without the
+        # file simply doesn't show the panel, rather than failing the whole analysis.
+        cp = ROOT / "app/checkpoints_reference.json"
+        self.checkpoint_ref = json.load(open(cp)) if cp.exists() else None
+        # Temperature + abstention threshold fitted on the val split by
+        # models/calibrate_classifier.py. Without the file the app falls back to the raw
+        # softmax, which is overconfident by ~5 points -- see that script's docstring.
+        cal = ROOT / "app/calibration.json"
+        self.calibration = json.load(open(cal)) if cal.exists() else None
         self.exemplars = self._load_exemplars()
         self.best_reference = self._best_references()
+        self.reference_pose = self._load_reference_poses()
 
     # ---- technique scorer ---------------------------------------------------------------------------
     @staticmethod
@@ -116,6 +129,30 @@ class Analyzer:
         best = ex.loc[ex.groupby("shot")["score_overall"].idxmax()]
         return {r.shot: {"clip_id": r.clip_id, "source": r.source, "score_overall": float(r.score_overall)}
                 for r in best.itertuples()}
+    def _load_reference_poses(self) -> dict[str, np.ndarray]:
+        """The contact-frame joints of each stroke's best-rated exemplar, for the ghost overlay.
+
+        One 17x3 array per stroke, nothing else: no frames, no clip data beyond the joints of a
+        clip kaggle/exemplars.csv already names. Missing sequences are skipped rather than
+        raising -- the ghost is an extra, and an install without the parquet still analyses.
+        """
+        out = {}
+        try:
+            seq = pd.read_parquet(ROOT / "data/processed/sequences.parquet").set_index("clip_id")
+        except Exception:
+            return out
+        for shot, best in self.best_reference.items():
+            cid = best["clip_id"]
+            if cid not in seq.index:
+                continue
+            try:
+                z = np.load(ROOT / seq.loc[cid, "seq_path"])
+                ci = float(z["contact_idx"]) if z["contact_idx"].shape == () else 17.0
+                out[shot] = z["seq"][int(min(round(ci), len(z["seq"]) - 1))]
+            except Exception:
+                continue
+        return out
+
     def _load_exemplars(self) -> dict[str, tuple]:
         """Cache each exemplar's embedding once at startup, grouped by shot -- the contrastive
         scorer only ever compares a query against same-shot exemplars. Scores only, in residual
@@ -364,9 +401,26 @@ class Analyzer:
             raise AnalysisError("The shot window was too short to analyse. Try a clip with the full swing visible.")
         x = torch.from_numpy(normalise(rs["seq"])).unsqueeze(0)
         with torch.no_grad():
-            probs = torch.softmax(self.classifier(x), 1)[0].numpy()
+            logits = self.classifier(x)[0].numpy()
+        # Restrict the call to the strokes the scorer can actually rate: a lofted/scoop/sweep
+        # prediction would be handed to the VAE fallback and benchmarked against all shots
+        # rather than its own, which reads to the viewer exactly like a properly scored one.
+        masked = np.full_like(logits, -np.inf)
+        masked[SCORED_IDX] = logits[SCORED_IDX]
+        # Temperature scaling, applied after the mask because masking changes the denominator:
+        # the number shown to the viewer is the one that has to be honest, and that number comes
+        # from the five-way softmax, not the eight-way one.
+        temp = float(self.calibration["temperature"]) if self.calibration else 1.0
+        masked = masked / temp
+        e = np.exp(masked - masked[SCORED_IDX].max())
+        probs = e / e.sum()
         order = np.argsort(-probs)
         shot = SHOTS[int(order[0])]
+        # Below the fitted threshold the app stops asserting one stroke. On the test split it
+        # then answers on 83.9% of clips and is right 87.8% of the time when it does, against
+        # 81.9% if it always answers.
+        floor = float(self.calibration["abstain_below"]) if self.calibration else 0.0
+        uncertain = bool(probs[order[0]] < floor)
 
         progress("technique", 0.74)
         pred = self.score_technique(x, shot)
@@ -391,8 +445,14 @@ class Analyzer:
                            "stride_pct": _pct(stride, self.ref["stride_cm"].get(mref), levels),
                            "swing_pct": _pct(swing, self.ref["swing_mps"].get(mref), levels)}
 
+        checkpoints = self.checkpoints(k, lo, contact, shot)
+
         progress("render", 0.82)
         media = self.render(frames, k, boxes, (lo, contact, hi), SHOT_NAMES[shot], fps, out_dir)
+        if checkpoints.get("available"):
+            g = self.ghost(frames[int(min(contact, n - 1))], k, contact, shot, checkpoints["front"], out_dir)
+            if g:
+                media["ghost"] = g
 
         return {
             "video": {"fps": fps, "frames": n, "seconds": n / fps, "width": W, "height": H, "truncated": truncated},
@@ -400,11 +460,138 @@ class Analyzer:
                        "window": {"start": lo, "contact": contact, "end": hi,
                                   "start_s": lo / fps, "contact_s": contact / fps, "end_s": hi / fps}},
             "shot": {"label": shot, "display": SHOT_NAMES[shot], "confidence": float(probs[order[0]]),
-                     "probs": [{"label": SHOTS[i], "display": SHOT_NAMES[SHOTS[i]], "p": float(probs[i])} for i in order]},
+                     "uncertain": uncertain, "calibrated": self.calibration is not None,
+                     "probs": [{"label": SHOTS[i], "display": SHOT_NAMES[SHOTS[i]], "p": float(probs[i])}
+                               for i in order if np.isfinite(probs[i]) and i in SCORED_IDX]},
             "technique": {"overall": scores["overall"], "overall_pct": _pct(scores["overall"], sq["overall"], levels),
                           "reference_shot": score_ref,
                           "parts": [{"part": p, "score": scores[p], "pct": _pct(scores[p], sq[p], levels)} for p in PARTS]},
-            "metrics": metrics, "media": media, "warnings": warnings, "reference": reference}
+            "metrics": metrics, "checkpoints": checkpoints, "media": media,
+            "warnings": warnings, "reference": reference}
+
+    # ---- contact checkpoints ----------------------------------------------------------------------
+    def checkpoints(self, k, lo, contact, shot) -> dict:
+        """The five coaching checkpoints at contact, each placed against what well-rated players
+        of this same stroke do.
+
+        Deliberately reported as a comparison and never as a verdict on the shot: the checkpoints
+        correlate only weakly with the coaches' scores (models/build_checkpoint_reference.py
+        prints the table), and for two of them the sign even flips within a single stroke. What
+        they give the viewer is something the technique score cannot -- a number they can see in
+        their own video and change in the nets.
+        """
+        if self.checkpoint_ref is None:
+            return {"available": False, "items": []}
+        m = measure_checkpoints(k, lo, contact)
+        if m is None:
+            return {"available": False, "items": [],
+                    "note": "The batter's pose at contact wasn't clear enough to measure."}
+
+        ref = self.checkpoint_ref
+        bands = ref["band"].get(shot) or {}
+        band_shot = shot if bands else "all"
+        if not bands:
+            bands = ref["band"].get("all", {})
+
+        items = []
+        for key, meta in ref["checkpoints"].items():
+            v, band = m.get(key), bands.get(key)
+            if v is None or band is None:
+                continue
+            # "inside" means within the 10th-90th percentile of well-rated clips of this stroke:
+            # the range four in five of them occupy. An interquartile band was tried first and is
+            # the wrong question -- half of all well-rated clips fall outside it by construction.
+            lo_b, hi_b = band["lo"], band["hi"]
+            where = "inside" if lo_b <= v <= hi_b else ("above" if v > hi_b else "below")
+            items.append({
+                "key": key, "name": meta["name"], "unit": meta["unit"], "hint": meta["hint"],
+                "better": meta["better"], "value": round(float(v), 2),
+                "band": {"lo": lo_b, "mid": band["p50"], "hi": hi_b,
+                         "q1": band["p25"], "q3": band["p75"], "n": band["n"]},
+                "where": where,
+                "pct": _pct(v, meta["all"], ref["levels"]),
+            })
+        return {"available": bool(items), "items": items, "reference_shot": band_shot,
+                "front": m["_front"], "contact_frame": m["_contact_frame"],
+                "well_rated_pct": ref["well_rated_pct"]}
+
+    # ---- ghost comparison ---------------------------------------------------------------------------
+    def ghost(self, frame, k, contact, shot, front, out_dir: Path):
+        """The contact frame with the best-rated player of the same stroke drawn over it.
+
+        The two bodies are made comparable before anything is drawn: the exemplar is scaled so
+        its torso matches this batter's, mirrored when the two face opposite ways, and anchored
+        at the hips. Without that the overlay compares camera distance and which end they bat
+        from, not technique. Returns None when either pose is unusable, and the UI just omits
+        the panel.
+        """
+        ref = self.reference_pose.get(shot)
+        if ref is None:
+            return None
+        i = int(min(max(contact, 0), len(k) - 1))
+        me = k[i]
+
+        def torso_of(j):
+            if not (np.isfinite(j[[LSH, RSH, LHIP, RHIP], :2]).all()
+                    and (j[[LSH, RSH, LHIP, RHIP], 2] >= 0.3).all()):
+                return None, None, None
+            msh = (j[LSH, :2] + j[RSH, :2]) / 2
+            mhip = (j[LHIP, :2] + j[RHIP, :2]) / 2
+            return float(np.linalg.norm(msh - mhip)), mhip, msh
+
+        t_me, hip_me, _ = torso_of(me)
+        t_ref, hip_ref, _ = torso_of(ref)
+        if not t_me or not t_ref or t_me < 5 or t_ref < 5:
+            return None
+
+        # same stance direction, so a left-hander is compared with the shape of the shot rather
+        # than told their whole body is the wrong way round
+        flip = -1.0 if front_side(ref[None, ...].repeat(2, 0), 0, 0) != front else 1.0
+        scale = t_me / t_ref
+        pts = hip_me + (ref[:, :2] - hip_ref) * scale * np.array([flip, 1.0])
+
+        g = frame.copy()
+        H = g.shape[0]
+        t = max(1, H // 240)
+        shade = np.zeros_like(g)               # dim the background so two skeletons stay readable
+        g = cv2.addWeighted(g, 0.45, shade, 0.55, 0)
+
+        # Blue for this batter, amber for the exemplar. Not red/green: that pair is the one
+        # most viewers with colour-vision deficiency cannot separate, and the whole panel is a
+        # two-way comparison.
+        for joints, conf, colour, width in ((pts, ref[:, 2], (74, 139, 255), 2 * t),
+                                            (me[:, :2], me[:, 2], (227, 125, 0), 2 * t)):
+            for u, v in SKEL:
+                if np.isfinite(joints[[u, v]]).all() and min(conf[u], conf[v]) > 0.3:
+                    cv2.line(g, tuple(joints[u].astype(int)), tuple(joints[v].astype(int)),
+                             colour, width, cv2.LINE_AA)
+            for j in range(17):
+                if np.isfinite(joints[j]).all() and conf[j] > 0.3:
+                    cv2.circle(g, tuple(joints[j].astype(int)), 2 * t, colour, -1, cv2.LINE_AA)
+
+        # Crop to the two bodies. On a wide broadcast shot the batter is a few dozen pixels tall
+        # and the full frame renders the comparison unreadable, which defeats the point of it.
+        vis = np.concatenate([pts[(ref[:, 2] > 0.3) & np.isfinite(pts).all(1)],
+                              me[:, :2][(me[:, 2] > 0.3) & np.isfinite(me[:, :2]).all(1)]])
+        if len(vis) >= 4:
+            x0, y0 = vis.min(0)
+            x1, y1 = vis.max(0)
+            pad = max(x1 - x0, y1 - y0) * 0.45 + 12
+            # keep 16:9 so the figure doesn't letterbox oddly in the card
+            cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
+            hh = max((y1 - y0) / 2 + pad, ((x1 - x0) / 2 + pad) * 9 / 16)
+            hw = hh * 16 / 9
+            X0, Y0 = int(max(0, cx - hw)), int(max(0, cy - hh))
+            X1, Y1 = int(min(g.shape[1], cx + hw)), int(min(g.shape[0], cy + hh))
+            if X1 - X0 > 40 and Y1 - Y0 > 30:
+                g = g[Y0:Y1, X0:X1]
+                if g.shape[1] < 640:           # upscale small crops so the joints stay legible
+                    k_ = 640 / g.shape[1]
+                    g = cv2.resize(g, (640, int(g.shape[0] * k_)), interpolation=cv2.INTER_CUBIC)
+
+        cv2.imwrite(str(out_dir / "ghost.jpg"), g, [cv2.IMWRITE_JPEG_QUALITY, 90])
+        return {"file": "ghost.jpg", "clip_id": self.best_reference[shot]["clip_id"],
+                "score": self.best_reference[shot]["score_overall"], "mirrored": flip < 0}
 
     # ---- overlay ----------------------------------------------------------------------------------
     @staticmethod

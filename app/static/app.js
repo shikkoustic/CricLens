@@ -42,6 +42,11 @@ document.getElementById("theme-toggle")?.addEventListener("click", () => {
 function setChoice(c) {
   choice = c;
   $("analyse").disabled = !c;
+  const picked = $("picked");
+  if (picked) {
+    picked.textContent = c ? (c.kind === "file" ? c.file.name : `${labelName(c.label) || "Sample"} · held-out clip`) : "";
+    picked.hidden = !c;
+  }
   $("input-error").hidden = true;
   document.querySelectorAll(".sample").forEach((b) => b.classList.toggle("on", c && c.kind === "sample" && b.dataset.id === c.id));
   const isFile = c && c.kind === "file";
@@ -77,7 +82,11 @@ async function loadSamples() {
       const cap = el("span", "cap");
       cap.append(el("b", null, s.label ? labelName(s.label) : "Clip"));
       b.append(img, cap, el("span", "check", "✓"));
-      b.title = s.label ? labelName(s.label) : "Clip";
+      // Word the badge from the clip's own percentile rather than a blanket "well played":
+      // scores for cut and pull/hook top out mid-distribution (see scripts/pick_demo_clips.py).
+      if (s.demo != null) b.append(el("span", "sample-tag", s.demo >= 70 ? "well played" : "above typical"));
+      b.title = (s.label ? labelName(s.label) : "Clip") +
+        (s.demo != null ? ` — scorer puts it at the ${ordinal(s.demo)} percentile for this stroke` : "");
       b.onclick = () => setChoice({ kind: "sample", id: s.id, label: s.label, source: s.source });
       box.append(b);
     }
@@ -173,11 +182,19 @@ function renderResults(jobId, name, r) {
 
   // shot
   const s = r.shot;
-  $("shot-name").textContent = s.display;
+  // Below the calibrated threshold the app names two strokes instead of asserting one. The
+  // threshold comes from the server (models/calibrate_classifier.py fitted it on val); the
+  // 0.6 here is only a fallback for an install with no calibration file.
+  const unsure = s.uncertain != null ? s.uncertain : s.confidence < 0.6;
+  const second = s.probs && s.probs[1];
+  $("shot-name").textContent = unsure && second ? `${s.display} or ${second.display}` : s.display;
   const tag = $("shot-tag");
-  const unsure = s.confidence < 0.6;
   tag.className = unsure ? "tag unsure" : "tag";
-  tag.textContent = unsure ? `Unsure · ${pct(s.confidence)}` : `${pct(s.confidence)} confident`;
+  tag.textContent = unsure ? "Not sure \u2014 two candidates" : `${pct(s.confidence)} confident`;
+  tag.title = s.calibrated
+    ? "Confidence is temperature-scaled on the validation split, so it means what it says: "
+      + "clips shown at 80% are right about 80% of the time."
+    : "Uncalibrated confidence.";
   const pb = $("shot-probs"); pb.textContent = "";
   s.probs.slice(0, 4).forEach((p, i) => {
     const row = el("div", i === 0 ? "prob top" : "prob");
@@ -192,8 +209,16 @@ function renderResults(jobId, name, r) {
   const ring = $("ring-fg"); ring.style.strokeDashoffset = 327;
   requestAnimationFrame(() => requestAnimationFrame(() => (ring.style.strokeDashoffset = 327 * (1 - t.overall / 10))));
   const refName = t.reference_shot === "all" ? "all rated shots" : `rated ${labelName(t.reference_shot).toLowerCase()}s`;
+  // The raw number alone misleads: coaches' own scores in CricketVision have a median of 6.3,
+  // so 6.4/10 is an average shot, not a poor one. Lead with where it sits in that distribution.
   const tp = $("tech-pct"); tp.textContent = "";
-  if (t.overall_pct != null) tp.append("Better than ", el("b", null, `${Math.round(t.overall_pct)}%`), ` of ${refName} in the coaching dataset.`);
+  if (t.overall_pct != null) {
+    const pc = Math.round(t.overall_pct);
+    const band = pc >= 85 ? ["Excellent", "good"] : pc >= 70 ? ["Strong", "good"]
+      : pc >= 35 ? ["About typical", "mid"] : pc >= 15 ? ["Below typical", "low"] : ["Well below typical", "low"];
+    tp.append(el("span", `verdict ${band[1]}`, band[0]));
+    tp.append(el("span", "verdict-sub", `${ordinal(pc)} percentile of ${refName} — better than ${pc}% of them.`));
+  }
   const parts = $("parts"); parts.textContent = "";
   for (const p of t.parts) {
     const row = el("div", "part");
@@ -202,6 +227,7 @@ function renderResults(jobId, name, r) {
     parts.append(row);
   }
 
+  renderCheckpoints(r.checkpoints, r.media, media);
   renderMetrics(r.metrics);
   renderCompare(r, media(r.media.video));
   renderCoach(r.coach);
@@ -211,6 +237,67 @@ function renderResults(jobId, name, r) {
 
 // side-by-side: the overlay clip the viewer just watched, next to a well-rated example of the
 // same shot (only exists for the five shots CricketVision scored enough of -- see app/pipeline.py)
+// The contact checkpoints. Each row is a measurement with the well-rated band behind it, so
+// the shape of the row carries the message before any of the text is read.
+// Degrees to the nearest degree, torso-lengths to two places: the underlying numbers carry
+// more precision than the measurement deserves, and "142.442\u00b0" reads as false confidence.
+const cpNum = (v, unit) => (unit === "deg" ? `${Math.round(v)}\u00b0` : v.toFixed(2));
+
+function renderCheckpoints(cp, mediaObj, media) {
+  const card = $("checkpoints-card");
+  if (!cp || !cp.available || !cp.items.length) { card.hidden = true; return; }
+  card.hidden = false;
+
+  $("cp-ref").textContent = cp.reference_shot === "all"
+    ? "vs all well-rated clips" : `vs well-rated ${labelName(cp.reference_shot).toLowerCase()}s`;
+
+  const list = $("cp-list"); list.textContent = "";
+  for (const it of cp.items) {
+    // Scale every row to the same window around the band so the bands stay comparable, and a
+    // value far outside still lands on the bar instead of running off it.
+    const span = Math.max(it.band.hi - it.band.lo, 1e-6);
+    const lo = it.band.lo - span * 1.6, hi = it.band.hi + span * 1.6;
+    const pos = (v) => `${Math.max(0, Math.min(100, ((v - lo) / (hi - lo)) * 100))}%`;
+
+    const row = el("div", `cp-row cp-${it.where}`);
+    const head = el("div", "cp-head");
+    head.append(el("span", "cp-name", it.name), el("span", "cp-val", cpNum(it.value, it.unit)));
+    if (it.unit === "torso") head.lastChild.append(el("small", null, " \u00d7 torso"));
+
+    const bar = el("div", "cp-bar");
+    const band = el("div", "cp-band");
+    band.style.left = pos(it.band.lo);
+    band.style.width = `calc(${pos(it.band.hi)} - ${pos(it.band.lo)})`;
+    const mid = el("div", "cp-mid"); mid.style.left = pos(it.band.mid);
+    const you = el("div", "cp-you"); you.style.left = pos(it.value);
+    bar.append(band, mid, you);
+
+    const lo_ = cpNum(it.band.lo, it.unit), hi_ = cpNum(it.band.hi, it.unit), mid_ = cpNum(it.band.mid, it.unit);
+    const strokes = cp.reference_shot === "all" ? "well-rated shots"
+      : `well-rated ${labelName(cp.reference_shot).toLowerCase()}s`;
+    // Inside the band needs one short line; outside it is the case that needs explaining, so
+    // that is where the coaching hint is spent.
+    const say = it.where === "inside"
+      ? `${strokes}: ${lo_}\u2013${hi_}.`
+      : `${it.where === "above" ? "Above" : "Below"} ${strokes} (${lo_}\u2013${hi_}, `
+        + `typically ${mid_}). ${it.hint}`;
+    row.append(head, bar, el("p", "cp-say", say));
+    list.append(row);
+  }
+
+  const g = mediaObj && mediaObj.ghost;
+  const fig = $("cp-ghost");
+  if (!g) { fig.hidden = true; return; }
+  fig.hidden = false;
+  $("cp-ghost-img").src = media(g.file);
+  $("cp-ghost-label").textContent = `Well-rated example (${g.score.toFixed(1)}/10)`;
+  // Say when the example was mirrored: otherwise a left-hander sees a body facing their way
+  // and reasonably wonders whether the comparison is broken.
+  $("cp-ghost-note").textContent = g.mirrored
+    ? "The example is mirrored to your stance, and scaled so the two torsos match."
+    : "Scaled so the two torsos match, lined up at the hips.";
+}
+
 function renderCompare(r, yoursSrc) {
   const card = $("compare-card");
   if (!r.reference) { card.hidden = true; return; }
@@ -346,7 +433,10 @@ function init() {
   ["dragleave", "drop"].forEach((ev) => dz.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.remove("drag"); }));
   dz.addEventListener("drop", (e) => pickFile(e.dataTransfer.files[0]));
   $("file-clear").onclick = () => { input.value = ""; setChoice(null); };
-  $("analyse").onclick = startAnalysis;
+  const picker = $("picker");
+  $("open-picker").onclick = () => picker.showModal();
+  $("picker-close").onclick = () => picker.close();
+  $("analyse").onclick = () => { picker.close(); startAnalysis(); };
   $("again").onclick = $("progress-back").onclick = () => { $("res-video").pause(); show("view-input"); setChoice(choice); };
   document.querySelectorAll(".speed button").forEach((b) => (b.onclick = () => {
     document.querySelectorAll(".speed button").forEach((x) => x.classList.toggle("on", x === b));
